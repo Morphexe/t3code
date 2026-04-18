@@ -3895,7 +3895,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
         () => {
           const labels = Array.from(
             document.querySelectorAll<HTMLElement>('[data-testid^="thread-group-"]'),
-          ).map((element) => element.textContent?.trim());
+          )
+            .map((element) => element.textContent?.trim())
+            .filter((label): label is string => Boolean(label));
           expect(labels).toEqual(["feature-a", "Local"]);
         },
         { timeout: 8_000, interval: 16 },
@@ -4039,6 +4041,88 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await expect.element(page.getByTestId("composer-editor")).toBeInTheDocument();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("creates a new chat directly from a worktree group header", async () => {
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-worktree-group-header-action" as MessageId,
+      targetText: "worktree group header action",
+    });
+    const baseThread = snapshot.threads[0]!;
+    const worktreePath = "/repo/project/.t3/worktrees/feature-a";
+    const groupedSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: [
+        Object.assign({}, baseThread, {
+          id: THREAD_ID,
+          title: "Worktree group source thread",
+          branch: "feature-a",
+          worktreePath,
+          messages: [],
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          latestTurn: null,
+          createdAt: isoAt(30),
+          updatedAt: isoAt(30),
+          session: baseThread.session
+            ? {
+                ...baseThread.session,
+                threadId: THREAD_ID,
+                updatedAt: isoAt(30),
+              }
+            : null,
+        }),
+        Object.assign({}, baseThread, {
+          id: "thread-browser-worktree-secondary" as ThreadId,
+          title: "Second worktree thread",
+          branch: "feature-a",
+          worktreePath,
+          messages: [],
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          latestTurn: null,
+          createdAt: isoAt(20),
+          updatedAt: isoAt(20),
+          session: baseThread.session
+            ? {
+                ...baseThread.session,
+                threadId: "thread-browser-worktree-secondary" as ThreadId,
+                updatedAt: isoAt(20),
+              }
+            : null,
+        }),
+      ],
+    };
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: groupedSnapshot,
+    });
+
+    try {
+      const createFromWorktreeGroup = page.getByLabelText(
+        "Create new thread in worktree feature-a",
+      );
+      await expect.element(createFromWorktreeGroup).toBeInTheDocument();
+
+      await createFromWorktreeGroup.click();
+
+      const newThreadPath = await waitForURL(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "Route should change to a new draft thread.",
+      );
+      const newDraftId = draftIdFromPath(newThreadPath);
+
+      expect(useComposerDraftStore.getState().getDraftSession(newDraftId)).toMatchObject({
+        envMode: "worktree",
+        branch: "feature-a",
+        worktreePath,
+      });
     } finally {
       await mounted.cleanup();
     }

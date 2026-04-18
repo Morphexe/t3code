@@ -760,6 +760,7 @@ interface SidebarProjectThreadListProps {
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
   expandThreadListForProject: (projectKey: string) => void;
   collapseThreadListForProject: (projectKey: string) => void;
+  createThreadInWorktreeGroup: (thread: SidebarThreadSummary) => void;
 }
 
 const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
@@ -800,6 +801,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     openPrLink,
     expandThreadListForProject,
     collapseThreadListForProject,
+    createThreadInWorktreeGroup,
   } = props;
   const showMoreButtonRender = useMemo(() => <button type="button" />, []);
   const showLessButtonRender = useMemo(() => <button type="button" />, []);
@@ -827,9 +829,29 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
                 <div
                   data-testid={`thread-group-${group.id}`}
                   data-thread-selection-safe
-                  className="flex h-5 w-full items-center px-2 pt-1 text-left text-[10px] font-medium tracking-[0.08em] text-muted-foreground/50 uppercase"
+                  className="flex h-5 w-full items-center gap-2 px-2 pt-1 text-left text-[10px] font-medium tracking-[0.08em] text-muted-foreground/50 uppercase"
                 >
-                  <span className="truncate">{group.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                  {group.worktreePath ? (
+                    <button
+                      type="button"
+                      aria-label={`Create new thread in worktree ${group.label}`}
+                      data-testid={`thread-group-create-${group.id}`}
+                      data-thread-selection-safe
+                      className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const thread = group.threads[0];
+                        if (!thread) {
+                          return;
+                        }
+                        createThreadInWorktreeGroup(thread);
+                      }}
+                    >
+                      <PlusIcon className="size-3" />
+                    </button>
+                  ) : null}
                 </div>
               </SidebarMenuSubItem>
             ) : null}
@@ -2025,6 +2047,20 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     ],
   );
 
+  const createThreadInWorktreeGroup = useCallback(
+    (thread: SidebarThreadSummary) => {
+      if (!thread.worktreePath) {
+        return;
+      }
+      void handleNewThread(scopeProjectRef(thread.environmentId, thread.projectId), {
+        branch: thread.branch,
+        worktreePath: thread.worktreePath,
+        envMode: "worktree",
+      });
+    },
+    [handleNewThread],
+  );
+
   return (
     <>
       <div className="group/project-header relative">
@@ -2172,6 +2208,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         openPrLink={openPrLink}
         expandThreadListForProject={expandThreadListForProject}
         collapseThreadListForProject={collapseThreadListForProject}
+        createThreadInWorktreeGroup={createThreadInWorktreeGroup}
       />
 
       <Dialog
