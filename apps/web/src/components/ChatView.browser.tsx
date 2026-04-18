@@ -3805,6 +3805,106 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("groups sidebar threads by worktree path", async () => {
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-thread-grouping-target" as MessageId,
+      targetText: "thread grouping target",
+    });
+    const baseThread = snapshot.threads[0]!;
+    const worktreePath = "/repo/project/.t3/worktrees/feature-a";
+    const groupedSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: [
+        Object.assign({}, baseThread, {
+          id: THREAD_ID,
+          title: "Worktree chat one",
+          branch: "feature-a",
+          worktreePath,
+          messages: [],
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          latestTurn: null,
+          createdAt: isoAt(30),
+          updatedAt: isoAt(30),
+          session: baseThread.session
+            ? {
+                ...baseThread.session,
+                threadId: THREAD_ID,
+                updatedAt: isoAt(30),
+              }
+            : null,
+        }),
+        Object.assign({}, baseThread, {
+          id: "thread-browser-worktree-secondary" as ThreadId,
+          title: "Worktree chat two",
+          branch: "feature-a",
+          worktreePath,
+          messages: [],
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          latestTurn: null,
+          createdAt: isoAt(20),
+          updatedAt: isoAt(20),
+          session: baseThread.session
+            ? {
+                ...baseThread.session,
+                threadId: "thread-browser-worktree-secondary" as ThreadId,
+                updatedAt: isoAt(20),
+              }
+            : null,
+        }),
+        Object.assign({}, baseThread, {
+          id: "thread-browser-local" as ThreadId,
+          title: "Local chat",
+          branch: "main",
+          worktreePath: null,
+          messages: [],
+          activities: [],
+          proposedPlans: [],
+          checkpoints: [],
+          latestTurn: null,
+          createdAt: isoAt(10),
+          updatedAt: isoAt(10),
+          session: baseThread.session
+            ? {
+                ...baseThread.session,
+                threadId: "thread-browser-local" as ThreadId,
+                updatedAt: isoAt(10),
+              }
+            : null,
+        }),
+      ],
+    };
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: groupedSnapshot,
+    });
+
+    try {
+      await expect.element(page.getByTestId(`thread-title-${THREAD_ID}`)).toBeInTheDocument();
+      await expect
+        .element(page.getByTestId("thread-title-thread-browser-worktree-secondary"))
+        .toBeInTheDocument();
+      await expect
+        .element(page.getByTestId("thread-title-thread-browser-local"))
+        .toBeInTheDocument();
+
+      await vi.waitFor(
+        () => {
+          const labels = Array.from(
+            document.querySelectorAll<HTMLElement>('[data-testid^="thread-group-"]'),
+          ).map((element) => element.textContent?.trim());
+          expect(labels).toEqual(["feature-a", "Local"]);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("shows the confirm archive action after clicking the archive button", async () => {
     localStorage.setItem(
       "t3code:client-settings:v1",

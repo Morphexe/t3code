@@ -5,6 +5,7 @@ import {
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
+  groupThreadsByWorktree,
   resolveAdjacentThreadId,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
@@ -140,6 +141,57 @@ describe("getSidebarThreadIdsToPrewarm", () => {
 
   it("returns no thread ids when the limit is zero", () => {
     expect(getSidebarThreadIdsToPrewarm(["t1", "t2"], 0)).toEqual([]);
+  });
+});
+
+describe("groupThreadsByWorktree", () => {
+  it("groups threads by shared worktree path while preserving first-seen order", () => {
+    const grouped = groupThreadsByWorktree([
+      makeThread({
+        id: ThreadId.make("thread-1"),
+        title: "Shared worktree A",
+        worktreePath: "/tmp/repo/worktrees/feature-a",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-2"),
+        title: "Local thread",
+        worktreePath: null,
+      }),
+      makeThread({
+        id: ThreadId.make("thread-3"),
+        title: "Shared worktree A second chat",
+        worktreePath: "/tmp/repo/worktrees/feature-a",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-4"),
+        title: "Shared worktree B",
+        worktreePath: "/tmp/repo/worktrees/feature-b",
+      }),
+    ]);
+
+    expect(grouped.map((group) => group.label)).toEqual(["feature-a", "Local", "feature-b"]);
+    expect(grouped.map((group) => group.threads.map((thread) => thread.id))).toEqual([
+      [ThreadId.make("thread-1"), ThreadId.make("thread-3")],
+      [ThreadId.make("thread-2")],
+      [ThreadId.make("thread-4")],
+    ]);
+  });
+
+  it("treats blank worktree paths as local threads", () => {
+    const grouped = groupThreadsByWorktree([
+      makeThread({
+        id: ThreadId.make("thread-1"),
+        worktreePath: "   ",
+      }),
+    ]);
+
+    expect(grouped).toMatchObject([
+      {
+        id: "local",
+        label: "Local",
+        worktreePath: null,
+      },
+    ]);
   });
 });
 
@@ -550,7 +602,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Completed", pulse: false });
+    ).toMatchObject({ label: "Finished", pulse: true });
   });
 
   it("shows completed when there is an unseen completion and no active blocker", () => {
@@ -568,7 +620,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Completed", pulse: false });
+    ).toMatchObject({ label: "Finished", pulse: true });
   });
 });
 
@@ -605,10 +657,10 @@ describe("resolveProjectStatusIndicator", () => {
     expect(
       resolveProjectStatusIndicator([
         {
-          label: "Completed",
+          label: "Finished",
           colorClass: "text-emerald-600",
           dotClass: "bg-emerald-500",
-          pulse: false,
+          pulse: true,
         },
         {
           label: "Pending Approval",
@@ -630,10 +682,10 @@ describe("resolveProjectStatusIndicator", () => {
     expect(
       resolveProjectStatusIndicator([
         {
-          label: "Completed",
+          label: "Finished",
           colorClass: "text-emerald-600",
           dotClass: "bg-emerald-500",
-          pulse: false,
+          pulse: true,
         },
         {
           label: "Plan Ready",
