@@ -147,7 +147,7 @@ import {
 } from "./ui/sidebar";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useCommandPaletteStore } from "../commandPaletteStore";
-import type { ThreadStatusPill } from "./Sidebar.logic";
+import type { SidebarNewThreadEnvMode, ThreadStatusPill } from "./Sidebar.logic";
 import {
   getSidebarThreadIdsToPrewarm,
   groupThreadsByWorktree,
@@ -1670,7 +1670,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
 
   const createThreadForProjectMember = useCallback(
-    (member: SidebarProjectGroupMember) => {
+    (member: SidebarProjectGroupMember, requestedEnvMode?: SidebarNewThreadEnvMode) => {
       const currentRouteParams =
         router.state.matches[router.state.matches.length - 1]?.params ?? {};
       const currentRouteTarget = resolveThreadRouteTarget(currentRouteParams);
@@ -1688,6 +1688,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const seedContext = resolveSidebarNewThreadSeedContext({
         projectId: member.id,
         defaultEnvMode: resolveSidebarNewThreadEnvMode({
+          ...(requestedEnvMode ? { requestedEnvMode } : {}),
           defaultEnvMode: defaultThreadEnvMode,
         }),
         activeThread:
@@ -1722,44 +1723,59 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [defaultThreadEnvMode, handleNewThread, isMobile, router, setOpenMobile],
   );
 
-  const handleCreateThreadClick = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
+  const createThreadFromProjectAction = useCallback(
+    async (
+      event: React.MouseEvent<HTMLButtonElement>,
+      requestedEnvMode?: SidebarNewThreadEnvMode,
+    ) => {
       event.preventDefault();
       event.stopPropagation();
 
       if (project.memberProjects.length === 1) {
-        createThreadForProjectMember(project.memberProjects[0]!);
+        createThreadForProjectMember(project.memberProjects[0]!, requestedEnvMode);
         return;
       }
 
-      void (async () => {
-        const api = readLocalApi();
-        if (!api) {
-          return;
-        }
-        const clicked = await api.contextMenu.show(
-          project.memberProjects.map((member) => ({
-            id: member.physicalProjectKey,
-            label: formatProjectMemberActionLabel(member, project.groupedProjectCount),
-          })),
-          {
-            x: event.clientX,
-            y: event.clientY,
-          },
-        );
-        if (!clicked) {
-          return;
-        }
-        const targetMember = project.memberProjects.find(
-          (member) => member.physicalProjectKey === clicked,
-        );
-        if (!targetMember) {
-          return;
-        }
-        createThreadForProjectMember(targetMember);
-      })();
+      const api = readLocalApi();
+      if (!api) {
+        return;
+      }
+      const clicked = await api.contextMenu.show(
+        project.memberProjects.map((member) => ({
+          id: member.physicalProjectKey,
+          label: formatProjectMemberActionLabel(member, project.groupedProjectCount),
+        })),
+        {
+          x: event.clientX,
+          y: event.clientY,
+        },
+      );
+      if (!clicked) {
+        return;
+      }
+      const targetMember = project.memberProjects.find(
+        (member) => member.physicalProjectKey === clicked,
+      );
+      if (!targetMember) {
+        return;
+      }
+      createThreadForProjectMember(targetMember, requestedEnvMode);
     },
     [createThreadForProjectMember, project.groupedProjectCount, project.memberProjects],
+  );
+
+  const handleCreateThreadClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      void createThreadFromProjectAction(event);
+    },
+    [createThreadFromProjectAction],
+  );
+
+  const handleCreateWorktreeClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      void createThreadFromProjectAction(event, "worktree");
+    },
+    [createThreadFromProjectAction],
   );
 
   const attemptArchiveThread = useCallback(
@@ -2083,10 +2099,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             </TooltipPopup>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <div className="pointer-events-none absolute top-1 right-1.5 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+        <div className="pointer-events-none absolute top-1 right-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Create new worktree in ${project.displayName}`}
+                  data-testid="new-worktree-button"
+                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={handleCreateWorktreeClick}
+                >
+                  <GitPullRequestIcon className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipPopup side="top">New worktree</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
                 <button
                   type="button"
                   aria-label={`Create new thread in ${project.displayName}`}
@@ -2096,13 +2128,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 >
                   <SquarePenIcon className="size-3.5" />
                 </button>
-              </div>
-            }
-          />
-          <TooltipPopup side="top">
-            {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
-          </TooltipPopup>
-        </Tooltip>
+              }
+            />
+            <TooltipPopup side="top">
+              {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
+            </TooltipPopup>
+          </Tooltip>
+        </div>
       </div>
 
       <SidebarProjectThreadList

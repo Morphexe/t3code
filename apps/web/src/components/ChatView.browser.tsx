@@ -4097,6 +4097,37 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("creates a fresh worktree draft from the project header worktree button", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-new-worktree-button-test" as MessageId,
+        targetText: "new worktree button test",
+      }),
+    });
+
+    try {
+      const newWorktreeButton = page.getByTestId("new-worktree-button");
+      await expect.element(newWorktreeButton).toBeInTheDocument();
+
+      await newWorktreeButton.click();
+
+      const newThreadPath = await waitForURL(
+        mounted.router,
+        (path) => UUID_ROUTE_RE.test(path),
+        "Route should change to a new draft thread.",
+      );
+      const newDraftId = draftIdFromPath(newThreadPath);
+
+      expect(useComposerDraftStore.getState().getDraftSession(newDraftId)).toMatchObject({
+        envMode: "worktree",
+        worktreePath: null,
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("creates a new draft instead of reusing a promoting draft thread", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
