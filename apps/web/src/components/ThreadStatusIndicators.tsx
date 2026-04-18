@@ -100,6 +100,8 @@ export function ThreadStatusLabel({
   status: ThreadStatusPill;
   compact?: boolean;
 }) {
+  const isFinished = status.label === "Finished";
+
   if (compact) {
     return (
       <span
@@ -112,6 +114,20 @@ export function ThreadStatusLabel({
           }`}
         />
         <span className="sr-only">{status.label}</span>
+      </span>
+    );
+  }
+
+  if (isFinished) {
+    return (
+      <span
+        title={status.label}
+        className={`inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium tracking-tight ${status.colorClass} ${
+          status.pulse ? "animate-pulse" : ""
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
+        <span>{status.label}</span>
       </span>
     );
   }
