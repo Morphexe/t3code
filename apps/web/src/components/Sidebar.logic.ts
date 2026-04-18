@@ -9,6 +9,7 @@ import {
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
+import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -25,11 +26,18 @@ type SidebarProject = {
 
 export type ThreadTraversalDirection = "previous" | "next";
 
+export interface SidebarWorktreeThreadGroup<TThread> {
+  id: string;
+  label: string;
+  worktreePath: string | null;
+  threads: TThread[];
+}
+
 export interface ThreadStatusPill {
   label:
     | "Working"
     | "Connecting"
-    | "Completed"
+    | "Finished"
     | "Pending Approval"
     | "Awaiting Input"
     | "Plan Ready";
@@ -44,7 +52,7 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   Working: 3,
   Connecting: 3,
   "Plan Ready": 2,
-  Completed: 1,
+  Finished: 1,
 };
 
 type ThreadStatusInput = Pick<
@@ -259,6 +267,40 @@ export function getSidebarThreadIdsToPrewarm<TThreadId>(
   return visibleThreadIds.slice(0, Math.max(0, limit));
 }
 
+function normalizeWorktreePathForSidebar(worktreePath: string | null | undefined): string | null {
+  const trimmed = worktreePath?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function groupThreadsByWorktree<TThread extends { worktreePath: string | null }>(
+  threads: readonly TThread[],
+): SidebarWorktreeThreadGroup<TThread>[] {
+  const groups: SidebarWorktreeThreadGroup<TThread>[] = [];
+  const groupsById = new Map<string, SidebarWorktreeThreadGroup<TThread>>();
+
+  for (const thread of threads) {
+    const worktreePath = normalizeWorktreePathForSidebar(thread.worktreePath);
+    const id = worktreePath === null ? "local" : `worktree:${worktreePath}`;
+    const existing = groupsById.get(id);
+
+    if (existing) {
+      existing.threads.push(thread);
+      continue;
+    }
+
+    const nextGroup: SidebarWorktreeThreadGroup<TThread> = {
+      id,
+      label: worktreePath === null ? "Local" : formatWorktreePathForDisplay(worktreePath),
+      worktreePath,
+      threads: [thread],
+    };
+    groupsById.set(id, nextGroup);
+    groups.push(nextGroup);
+  }
+
+  return groups;
+}
+
 export function resolveAdjacentThreadId<T>(input: {
   threadIds: readonly T[];
   currentThreadId: T | null;
@@ -383,10 +425,10 @@ export function resolveThreadStatusPill(input: {
 
   if (hasUnseenCompletion(thread)) {
     return {
-      label: "Completed",
+      label: "Finished",
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
       dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
-      pulse: false,
+      pulse: true,
     };
   }
 
