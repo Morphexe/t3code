@@ -15,6 +15,7 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
+  ProjectReadFileError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
@@ -783,6 +784,28 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     cause,
                   }),
               ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsReadFile]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsReadFile,
+            workspaceFileSystem.readFile(input).pipe(
+              Effect.mapError((cause) => {
+                if (Schema.is(WorkspacePathOutsideRootError)(cause)) {
+                  return new ProjectReadFileError({
+                    message: "Workspace file path must stay within the project root.",
+                    reason: "outside-root",
+                    cause,
+                  });
+                }
+                const detail = cause.detail.toLowerCase();
+                return new ProjectReadFileError({
+                  message: cause.detail || `Failed to read workspace file '${input.relativePath}'.`,
+                  reason: detail.includes("no such file") ? "not-found" : "unknown",
+                  cause,
+                });
+              }),
             ),
             { "rpc.aggregate": "workspace" },
           ),

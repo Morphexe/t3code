@@ -56,6 +56,10 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
+    "./repoCommands": {
+      "types": "./src/repoCommands.ts",
+      "import": "./src/repoCommands.ts"
+    },
     "./searchRanking": {
       "types": "./src/searchRanking.ts",
       "import": "./src/searchRanking.ts"
