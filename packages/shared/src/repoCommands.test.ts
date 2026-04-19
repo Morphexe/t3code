@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createRepoCommandDefinition,
+  inferRepoCommandArgumentsFromPrompt,
+  parseCreateRepoCommandInvocation,
   parseRepoCommandInvocation,
   parseRepoCommandsJson,
   renderRepoCommandPrompt,
   resolveRepoCommandPromptFromInvocation,
+  stringifyRepoCommandsFile,
+  upsertRepoCommand,
 } from "./repoCommands.ts";
 
 describe("parseRepoCommandsJson", () => {
@@ -77,6 +82,53 @@ describe("parseRepoCommandInvocation", () => {
   });
 });
 
+describe("inferRepoCommandArgumentsFromPrompt", () => {
+  it("collects unique placeholders in first-seen order", () => {
+    expect(
+      inferRepoCommandArgumentsFromPrompt(
+        "Please Commit $arg1 to $arg2 else. Repeat $arg1 and $arg3.",
+      ),
+    ).toEqual(["arg1", "arg2", "arg3"]);
+  });
+});
+
+describe("createRepoCommandDefinition", () => {
+  it("infers arguments from prompt placeholders", () => {
+    expect(
+      createRepoCommandDefinition({
+        name: "commit-shit",
+        prompt: "Please Commit $arg1 to $arg2 else.",
+      }),
+    ).toEqual({
+      name: "commit-shit",
+      arguments: ["arg1", "arg2"],
+      prompt: "Please Commit $arg1 to $arg2 else.",
+    });
+  });
+});
+
+describe("parseCreateRepoCommandInvocation", () => {
+  it("parses a create-command invocation into a repo command definition", () => {
+    expect(
+      parseCreateRepoCommandInvocation(
+        "/create-command commit-shit Please Commit $arg1 to $arg2 else.",
+      ),
+    ).toEqual({
+      command: {
+        name: "commit-shit",
+        arguments: ["arg1", "arg2"],
+        prompt: "Please Commit $arg1 to $arg2 else.",
+      },
+    });
+  });
+
+  it("throws when the command prompt is missing", () => {
+    expect(() => parseCreateRepoCommandInvocation("/create-command commit-shit")).toThrow(
+      "/create-command requires a prompt after the command name.",
+    );
+  });
+});
+
 describe("renderRepoCommandPrompt", () => {
   const command = {
     name: "commit-shit",
@@ -118,5 +170,64 @@ describe("resolveRepoCommandPromptFromInvocation", () => {
       },
       prompt: "Please Commit repo1 to repo2 else.",
     });
+  });
+});
+
+describe("upsertRepoCommand", () => {
+  it("replaces an existing command with the same name", () => {
+    expect(
+      upsertRepoCommand(
+        {
+          commands: [
+            {
+              name: "commit-shit",
+              arguments: ["arg1"],
+              prompt: "Old $arg1",
+            },
+          ],
+        },
+        {
+          name: "commit-shit",
+          arguments: ["arg1", "arg2"],
+          prompt: "New $arg1 $arg2",
+        },
+      ),
+    ).toEqual({
+      commands: [
+        {
+          name: "commit-shit",
+          arguments: ["arg1", "arg2"],
+          prompt: "New $arg1 $arg2",
+        },
+      ],
+    });
+  });
+});
+
+describe("stringifyRepoCommandsFile", () => {
+  it("formats the commands file as stable JSON", () => {
+    expect(
+      stringifyRepoCommandsFile({
+        commands: [
+          {
+            name: "commit-shit",
+            arguments: ["arg1", "arg2"],
+            prompt: "Please Commit $arg1 to $arg2 else.",
+          },
+        ],
+      }),
+    ).toBe(`{
+  "commands": [
+    {
+      "name": "commit-shit",
+      "arguments": [
+        "arg1",
+        "arg2"
+      ],
+      "prompt": "Please Commit $arg1 to $arg2 else."
+    }
+  ]
+}
+`);
   });
 });

@@ -18,6 +18,10 @@ export interface RepoCommandInvocation {
   readonly argumentValues: ReadonlyArray<string>;
 }
 
+export interface CreateRepoCommandInvocation {
+  readonly command: RepoCommandDefinition;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -131,6 +135,63 @@ export function parseRepoCommandsJson(json: string): RepoCommandsFile {
   return parseRepoCommandsFile(parsed);
 }
 
+export function inferRepoCommandArgumentsFromPrompt(prompt: string): ReadonlyArray<string> {
+  const argumentNames: string[] = [];
+  const seen = new Set<string>();
+  let placeholderMatch: RegExpExecArray | null;
+  while ((placeholderMatch = PROMPT_PLACEHOLDER_PATTERN.exec(prompt)) !== null) {
+    const placeholderName = placeholderMatch[1];
+    if (!placeholderName || seen.has(placeholderName)) {
+      continue;
+    }
+    seen.add(placeholderName);
+    argumentNames.push(placeholderName);
+  }
+  PROMPT_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return argumentNames;
+}
+
+export function createRepoCommandDefinition(input: {
+  readonly name: string;
+  readonly prompt: string;
+}): RepoCommandDefinition {
+  const command = {
+    name: input.name,
+    arguments: inferRepoCommandArgumentsFromPrompt(input.prompt),
+    prompt: input.prompt,
+  } satisfies RepoCommandDefinition;
+
+  return parseCommandDefinition(command, 0);
+}
+
+export function parseCreateRepoCommandInvocation(
+  input: string,
+): CreateRepoCommandInvocation | null {
+  const trimmed = input.trim();
+  const match = /^\/create-command(?:\s+([a-z0-9]+(?:-[a-z0-9]+)*))?(?:\s+([\s\S]+))?$/i.exec(
+    trimmed,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const commandName = match[1]?.trim() ?? "";
+  const prompt = match[2]?.trim() ?? "";
+  if (!commandName) {
+    throw new Error("/create-command requires a command name.");
+  }
+  if (!prompt) {
+    throw new Error("/create-command requires a prompt after the command name.");
+  }
+
+  return {
+    command: createRepoCommandDefinition({
+      name: commandName,
+      prompt,
+    }),
+  };
+}
+
 export function parseRepoCommandInvocation(input: string): RepoCommandInvocation | null {
   const trimmed = input.trim();
   const match = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+(.+))?$/.exec(trimmed);
@@ -187,4 +248,26 @@ export function resolveRepoCommandPromptFromInvocation(input: {
     command,
     prompt: renderRepoCommandPrompt(command, invocation.argumentValues),
   };
+}
+
+export function upsertRepoCommand(
+  file: RepoCommandsFile,
+  command: RepoCommandDefinition,
+): RepoCommandsFile {
+  const existingIndex = file.commands.findIndex((candidate) => candidate.name === command.name);
+  if (existingIndex < 0) {
+    return {
+      commands: [...file.commands, command],
+    };
+  }
+
+  return {
+    commands: file.commands.map((candidate, index) =>
+      index === existingIndex ? command : candidate,
+    ),
+  };
+}
+
+export function stringifyRepoCommandsFile(file: RepoCommandsFile): string {
+  return `${JSON.stringify({ commands: file.commands }, null, 2)}\n`;
 }

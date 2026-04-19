@@ -21,6 +21,13 @@ import {
   TerminalOpenInput,
 } from "@t3tools/contracts";
 import {
+  DEFAULT_REPO_COMMANDS_FILE_PATH,
+  parseCreateRepoCommandInvocation,
+  parseRepoCommandsJson,
+  stringifyRepoCommandsFile,
+  upsertRepoCommand,
+} from "@t3tools/shared/repoCommands";
+import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
@@ -29,11 +36,17 @@ import {
 import { applyClaudePromptEffortPrefix, createModelSelection } from "@t3tools/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Debouncer } from "@tanstack/react-pacer";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
+import {
+  isProjectReadFileNotFoundError,
+  projectQueryKeys,
+  repoCommandsQueryOptions,
+} from "~/lib/projectReactQuery";
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
@@ -159,6 +172,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolvePromptFromRepoCommands,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -611,6 +625,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const queryClient = useQueryClient();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -1420,6 +1435,15 @@ export default function ChatView(props: ChatViewProps) {
         worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
+  const repoCommandsQuery = useQuery(
+    repoCommandsQueryOptions({
+      environmentId,
+      cwd: gitCwd ?? activeProject?.cwd ?? null,
+      enabled: activeProject !== undefined,
+    }),
+  );
+  const repoCommands = repoCommandsQuery.data?.commands ?? [];
+  const repoCommandsCwd = gitCwd ?? activeProject?.cwd ?? null;
   const gitStatusQuery = useGitStatus({ environmentId, cwd: gitCwd });
   const keybindings = useServerKeybindings();
   const availableEditors = useServerAvailableEditors();
@@ -2412,6 +2436,66 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
       return;
     }
+    if (composerImages.length === 0 && sendableComposerTerminalContexts.length === 0) {
+      try {
+        const createCommand = parseCreateRepoCommandInvocation(trimmed);
+        if (createCommand) {
+          const api = readEnvironmentApi(environmentId);
+          if (!api || !repoCommandsCwd) {
+            toastManager.add({
+              type: "error",
+              title: "Could not create repo command",
+              description: "Project file access is unavailable for this thread.",
+            });
+            return;
+          }
+
+          let currentCommandsFile = { commands: repoCommands };
+          try {
+            const currentFile = await api.projects.readFile({
+              cwd: repoCommandsCwd,
+              relativePath: DEFAULT_REPO_COMMANDS_FILE_PATH,
+            });
+            currentCommandsFile = parseRepoCommandsJson(currentFile.contents);
+          } catch (error) {
+            if (!isProjectReadFileNotFoundError(error)) {
+              throw error;
+            }
+          }
+
+          const nextCommandsFile = upsertRepoCommand(currentCommandsFile, createCommand.command);
+          await api.projects.writeFile({
+            cwd: repoCommandsCwd,
+            relativePath: DEFAULT_REPO_COMMANDS_FILE_PATH,
+            contents: stringifyRepoCommandsFile(nextCommandsFile),
+          });
+          queryClient.setQueryData(
+            projectQueryKeys.repoCommands(
+              environmentId,
+              repoCommandsCwd,
+              DEFAULT_REPO_COMMANDS_FILE_PATH,
+            ),
+            nextCommandsFile,
+          );
+          promptRef.current = "";
+          clearComposerDraftContent(composerDraftTarget);
+          composerRef.current?.resetCursorState();
+          toastManager.add({
+            type: "success",
+            title: `Saved /${createCommand.command.name}`,
+            description: `Repo command updated in ${DEFAULT_REPO_COMMANDS_FILE_PATH}.`,
+          });
+          return;
+        }
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not create repo command",
+          description: error instanceof Error ? error.message : "Failed to write repo command.",
+        });
+        return;
+      }
+    }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
         const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -2448,8 +2532,28 @@ export default function ChatView(props: ChatViewProps) {
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
+    let resolvedPromptForSend = promptForSend;
+    let resolvedTrimmedPrompt = trimmed;
+    try {
+      const resolvedPrompt = resolvePromptFromRepoCommands({
+        prompt: promptForSend,
+        commands: repoCommands,
+      });
+      resolvedPromptForSend = resolvedPrompt.prompt;
+      if (resolvedPrompt.commandName) {
+        resolvedTrimmedPrompt = resolvedPrompt.prompt.trim();
+      }
+    } catch (error) {
+      setThreadError(
+        threadIdForSend,
+        error instanceof Error ? error.message : "Failed to resolve repo command.",
+      );
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+      return;
+    }
     const messageTextForSend = appendTerminalContextsToPrompt(
-      promptForSend,
+      resolvedPromptForSend,
       composerTerminalContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -2523,7 +2627,7 @@ export default function ChatView(props: ChatViewProps) {
           firstComposerImageName = firstComposerImage.name;
         }
       }
-      let titleSeed = trimmed;
+      let titleSeed = resolvedTrimmedPrompt;
       if (!titleSeed) {
         if (firstComposerImageName) {
           titleSeed = `Image: ${firstComposerImageName}`;
@@ -3342,6 +3446,7 @@ export default function ChatView(props: ChatViewProps) {
               resolvedTheme={resolvedTheme}
               settings={settings}
               gitCwd={gitCwd}
+              repoCommands={repoCommands}
               promptRef={promptRef}
               composerImagesRef={composerImagesRef}
               composerTerminalContextsRef={composerTerminalContextsRef}

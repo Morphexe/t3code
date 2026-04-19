@@ -83,6 +83,10 @@ function createRegisteredGitStatusClient(environmentId: EnvironmentId) {
       onEvent: vi.fn(() => () => undefined),
     },
     projects: {
+      readFile: vi.fn(async () => ({
+        relativePath: ".t3commands.json",
+        contents: '{"commands":[]}\n',
+      })),
       searchEntries: vi.fn(async () => []),
       writeFile: vi.fn(async () => undefined),
     },

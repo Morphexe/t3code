@@ -4,6 +4,7 @@ import {
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
+import type { RepoCommandDefinition } from "@t3tools/shared/repoCommands";
 import { BotIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
@@ -34,6 +35,13 @@ export type ComposerCommandItem =
       id: string;
       type: "slash-command";
       command: ComposerSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "repo-command";
+      command: RepoCommandDefinition;
       label: string;
       description: string;
     }
@@ -100,11 +108,15 @@ function groupCommandItems(
   }
 
   const builtInItems = items.filter((item) => item.type === "slash-command");
+  const repoItems = items.filter((item) => item.type === "repo-command");
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
 
   const groups: ComposerCommandGroup[] = [];
   if (builtInItems.length > 0) {
     groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
+  }
+  if (repoItems.length > 0) {
+    groups.push({ id: "repo", label: "Repo", items: repoItems });
   }
   if (providerItems.length > 0) {
     groups.push({ id: "provider", label: "Provider", items: providerItems });
@@ -244,6 +256,11 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : null}
       {props.item.type === "slash-command" ? (
         <BotIcon className="size-4 shrink-0 text-muted-foreground/80" />
+      ) : null}
+      {props.item.type === "repo-command" ? (
+        <Badge variant="outline" className="px-1 py-0 text-[10px]">
+          repo
+        </Badge>
       ) : null}
       {props.item.type === "provider-slash-command" ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground/80">

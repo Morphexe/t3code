@@ -799,10 +799,38 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     cause,
                   });
                 }
+                const nestedCause =
+                  cause.cause && typeof cause.cause === "object" ? cause.cause : null;
                 const detail = cause.detail.toLowerCase();
+                const nestedCode =
+                  nestedCause && "code" in nestedCause
+                    ? String(nestedCause.code ?? "").toLowerCase()
+                    : "";
+                const nestedMessage =
+                  nestedCause && "message" in nestedCause
+                    ? String(nestedCause.message ?? "").toLowerCase()
+                    : "";
+                const nestedReasonTag =
+                  nestedCause &&
+                  "reason" in nestedCause &&
+                  nestedCause.reason &&
+                  typeof nestedCause.reason === "object" &&
+                  "_tag" in nestedCause.reason
+                    ? String(nestedCause.reason._tag ?? "").toLowerCase()
+                    : "";
                 return new ProjectReadFileError({
                   message: cause.detail || `Failed to read workspace file '${input.relativePath}'.`,
-                  reason: detail.includes("no such file") ? "not-found" : "unknown",
+                  reason:
+                    detail.includes("no such file") ||
+                    detail.includes("enoent") ||
+                    detail.includes("notfound") ||
+                    detail.includes("does not exist") ||
+                    nestedCode === "enoent" ||
+                    nestedReasonTag === "notfound" ||
+                    nestedMessage.includes("no such file") ||
+                    nestedMessage.includes("does not exist")
+                      ? "not-found"
+                      : "unknown",
                   cause,
                 });
               }),

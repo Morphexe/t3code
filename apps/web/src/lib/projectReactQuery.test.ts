@@ -15,7 +15,7 @@ describe("projectReadFileQueryOptions", () => {
   it("forwards project file reads to the environment API", async () => {
     const readFile = vi.fn().mockResolvedValue({
       relativePath: ".t3commands.json",
-      contents: "{\"commands\":[]}\n",
+      contents: '{"commands":[]}\n',
     });
     vi.spyOn(environmentApi, "ensureEnvironmentApi").mockReturnValue({
       projects: { readFile },
