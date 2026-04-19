@@ -203,7 +203,19 @@ function createMockEnvironmentApi(input: {
 }): EnvironmentApi {
   return {
     terminal: {} as EnvironmentApi["terminal"],
-    projects: {} as EnvironmentApi["projects"],
+    projects: {
+      readFile: (async () => ({
+        relativePath: ".t3commands.json",
+        contents: '{"commands":[]}\n',
+      })) as EnvironmentApi["projects"]["readFile"],
+      searchEntries: (async () => ({
+        entries: [],
+        truncated: false,
+      })) as EnvironmentApi["projects"]["searchEntries"],
+      writeFile: (async () => ({
+        relativePath: "ignored.txt",
+      })) as EnvironmentApi["projects"]["writeFile"],
+    },
     filesystem: {
       browse: input.browse,
     },
@@ -1041,6 +1053,12 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
     return {
       entries: [],
       truncated: false,
+    };
+  }
+  if (tag === WS_METHODS.projectsReadFile) {
+    return {
+      relativePath: ".t3commands.json",
+      contents: '{"commands":[]}\n',
     };
   }
   if (tag === WS_METHODS.shellOpenInEditor) {
@@ -6355,6 +6373,190 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
     } finally {
       releaseModShortcut("Control");
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows repo-local slash commands in the composer menu", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-repo-command-menu-target" as MessageId,
+        targetText: "repo command menu thread",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsReadFile) {
+          return {
+            relativePath: ".t3commands.json",
+            contents: JSON.stringify({
+              commands: [
+                {
+                  name: "commit-shit",
+                  arguments: ["arg1", "arg2"],
+                  prompt: "Please Commit $arg1 to $arg2 else.",
+                },
+              ],
+            }),
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await waitForComposerEditor();
+      await page.getByTestId("composer-editor").fill("/");
+
+      const menuItem = await waitForComposerMenuItem("repo-command:commit-shit");
+      await vi.waitFor(
+        () => {
+          expect(menuItem.textContent).toContain("/commit-shit");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("creates a repo command from /create-command and makes it available immediately", async () => {
+    let repoCommandsContents = '{"commands":[]}\n';
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-create-command-target" as MessageId,
+        targetText: "create command thread",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsReadFile) {
+          return {
+            relativePath: ".t3commands.json",
+            contents: repoCommandsContents,
+          };
+        }
+        if (body._tag === WS_METHODS.projectsWriteFile) {
+          repoCommandsContents =
+            typeof body.contents === "string" ? body.contents : repoCommandsContents;
+          return {
+            relativePath:
+              typeof body.relativePath === "string" ? body.relativePath : ".t3commands.json",
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore
+        .getState()
+        .setPrompt(THREAD_REF, "/create-command commit-shit Please Commit $arg1 to $arg2 else.");
+      await waitForLayout();
+
+      const sendButton = await waitForSendButton();
+      expect(sendButton.disabled).toBe(false);
+      sendButton.click();
+
+      await vi.waitFor(
+        () => {
+          const writeRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.projectsWriteFile,
+          ) as
+            | {
+                _tag: string;
+                relativePath?: string;
+                contents?: string;
+              }
+            | undefined;
+
+          expect(writeRequest).toMatchObject({
+            _tag: WS_METHODS.projectsWriteFile,
+            relativePath: ".t3commands.json",
+          });
+          expect(writeRequest?.contents).toContain('"name": "commit-shit"');
+          expect(writeRequest?.contents).toContain(
+            '"prompt": "Please Commit $arg1 to $arg2 else."',
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await page.getByTestId("composer-editor").fill("/");
+      const menuItem = await waitForComposerMenuItem("repo-command:commit-shit");
+      await vi.waitFor(
+        () => {
+          expect(menuItem.textContent).toContain("/commit-shit");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("expands repo slash commands before dispatching the turn", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-repo-command-send-target" as MessageId,
+        targetText: "repo command send thread",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsReadFile) {
+          return {
+            relativePath: ".t3commands.json",
+            contents: JSON.stringify({
+              commands: [
+                {
+                  name: "commit-shit",
+                  arguments: ["arg1", "arg2"],
+                  prompt: "Please Commit $arg1 to $arg2 else.",
+                },
+              ],
+            }),
+          };
+        }
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "/commit-shit repo1 repo2");
+      await waitForLayout();
+
+      const sendButton = await waitForSendButton();
+      expect(sendButton.disabled).toBe(false);
+      sendButton.click();
+
+      await vi.waitFor(
+        () => {
+          const dispatchRequest = wsRequests.find(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              request.type === "thread.turn.start",
+          ) as
+            | {
+                _tag: string;
+                type?: string;
+                message?: { text?: string };
+              }
+            | undefined;
+
+          expect(dispatchRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            type: "thread.turn.start",
+            message: {
+              text: "Please Commit repo1 to repo2 else.",
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
       await mounted.cleanup();
     }
   });

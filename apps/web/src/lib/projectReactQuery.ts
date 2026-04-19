@@ -22,11 +22,8 @@ export const projectQueryKeys = {
   ) => ["projects", "search-entries", environmentId ?? null, cwd, query, limit] as const,
   readFile: (environmentId: EnvironmentId | null, cwd: string | null, relativePath: string) =>
     ["projects", "read-file", environmentId ?? null, cwd, relativePath] as const,
-  repoCommands: (
-    environmentId: EnvironmentId | null,
-    cwd: string | null,
-    relativePath: string,
-  ) => ["projects", "repo-commands", environmentId ?? null, cwd, relativePath] as const,
+  repoCommands: (environmentId: EnvironmentId | null, cwd: string | null, relativePath: string) =>
+    ["projects", "repo-commands", environmentId ?? null, cwd, relativePath] as const,
 };
 
 const DEFAULT_SEARCH_ENTRIES_LIMIT = 80;
@@ -39,11 +36,14 @@ const EMPTY_REPO_COMMANDS_RESULT: RepoCommandsFile = {
   commands: [],
 };
 
-function isProjectReadFileNotFoundError(error: unknown): boolean {
+export function isProjectReadFileNotFoundError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
   }
-  const maybeError = error as Partial<ProjectReadFileError> & { message?: unknown; reason?: unknown };
+  const maybeError = error as Partial<ProjectReadFileError> & {
+    message?: unknown;
+    reason?: unknown;
+  };
   if (maybeError.reason === "not-found") {
     return true;
   }

@@ -8,6 +8,10 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import {
+  resolveRepoCommandPromptFromInvocation,
+  type RepoCommandDefinition,
+} from "@t3tools/shared/repoCommands";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
@@ -200,6 +204,26 @@ export function deriveComposerSendState(options: {
     expiredTerminalContextCount,
     hasSendableContent:
       trimmedPrompt.length > 0 || options.imageCount > 0 || sendableTerminalContexts.length > 0,
+  };
+}
+
+export function resolvePromptFromRepoCommands(input: {
+  prompt: string;
+  commands: ReadonlyArray<RepoCommandDefinition>;
+}): { prompt: string; commandName: string | null } {
+  const resolved = resolveRepoCommandPromptFromInvocation({
+    commands: input.commands,
+    invocation: input.prompt,
+  });
+  if (!resolved) {
+    return {
+      prompt: input.prompt,
+      commandName: null,
+    };
+  }
+  return {
+    prompt: resolved.prompt,
+    commandName: resolved.command.name,
   };
 }
 

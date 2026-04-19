@@ -19,6 +19,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import type { RepoCommandDefinition } from "@t3tools/shared/repoCommands";
 import {
   forwardRef,
   memo,
@@ -146,6 +147,13 @@ const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="combobox-popup"]',
   '[data-slot="autocomplete-popup"]',
 ].join(",");
+
+function describeRepoCommand(command: RepoCommandDefinition): string {
+  if (command.arguments.length === 0) {
+    return "Run repo command";
+  }
+  return `Args: ${command.arguments.map((argument) => `<${argument}>`).join(" ")}`;
+}
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -444,6 +452,7 @@ export interface ChatComposerProps {
   keybindings: ResolvedKeybindingsConfig;
   terminalOpen: boolean;
   gitCwd: string | null;
+  repoCommands: ReadonlyArray<RepoCommandDefinition>;
 
   // Refs the parent needs kept in sync
   promptRef: React.MutableRefObject<string>;
@@ -887,6 +896,13 @@ export const ChatComposer = memo(
             label: "/default",
             description: "Switch this thread back to normal build mode",
           },
+          {
+            id: "slash:create-command",
+            type: "slash-command",
+            command: "create-command",
+            label: "/create-command",
+            description: "Create or update a repo slash command from name and prompt",
+          },
         ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
         const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
           (command) => ({
@@ -898,8 +914,19 @@ export const ChatComposer = memo(
             description: command.description ?? command.input?.hint ?? "Run provider command",
           }),
         );
+        const repoSlashCommandItems = props.repoCommands.map((command) => ({
+          id: `repo-command:${command.name}`,
+          type: "repo-command" as const,
+          command,
+          label: `/${command.name}`,
+          description: describeRepoCommand(command),
+        }));
         const query = composerTrigger.query.trim().toLowerCase();
-        const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
+        const slashCommandItems = [
+          ...builtInSlashCommandItems,
+          ...repoSlashCommandItems,
+          ...providerSlashCommandItems,
+        ];
         if (!query) {
           return slashCommandItems;
         }
@@ -922,7 +949,7 @@ export const ChatComposer = memo(
         }));
       }
       return [];
-    }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries]);
+    }, [composerTrigger, props.repoCommands, selectedProvider, selectedProviderStatus, workspaceEntries]);
 
     const composerMenuOpen = Boolean(composerTrigger);
     const composerMenuSearchKey = composerTrigger
@@ -1512,6 +1539,24 @@ export const ChatComposer = memo(
             }
             return;
           }
+          if (item.command === "create-command") {
+            const replacement = "/create-command ";
+            const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+              snapshot.value,
+              trigger.rangeEnd,
+              replacement,
+            );
+            const applied = applyPromptReplacement(
+              trigger.rangeStart,
+              replacementRangeEnd,
+              replacement,
+              { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+            );
+            if (applied) {
+              setComposerHighlightedItemId(null);
+            }
+            return;
+          }
           void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -1522,6 +1567,24 @@ export const ChatComposer = memo(
           return;
         }
         if (item.type === "provider-slash-command") {
+          const replacement = `/${item.command.name} `;
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
+        if (item.type === "repo-command") {
           const replacement = `/${item.command.name} `;
           const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
             snapshot.value,

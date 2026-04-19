@@ -17,6 +17,17 @@ describe("searchSlashCommandItems", () => {
         description: "Switch this thread back to normal build mode",
       },
       {
+        id: "repo-command:commit-shit",
+        type: "repo-command",
+        command: {
+          name: "commit-shit",
+          arguments: ["arg1", "arg2"],
+          prompt: "Please Commit $arg1 to $arg2 else.",
+        },
+        label: "/commit-shit",
+        description: "Repo command",
+      },
+      {
         id: "provider-slash-command:claudeAgent:ui",
         type: "provider-slash-command",
         provider: claudeDriver,
@@ -33,7 +44,10 @@ describe("searchSlashCommandItems", () => {
         description: "Create distinctive, production-grade frontend interfaces",
       },
     ] satisfies Array<
-      Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>
+      Extract<
+        ComposerCommandItem,
+        { type: "slash-command" | "repo-command" | "provider-slash-command" }
+      >
     >;
 
     expect(searchSlashCommandItems(items, "ui").map((item) => item.id)).toEqual([
@@ -44,6 +58,17 @@ describe("searchSlashCommandItems", () => {
 
   it("supports fuzzy provider command matches", () => {
     const items = [
+      {
+        id: "repo-command:github-fix",
+        type: "repo-command",
+        command: {
+          name: "github-fix",
+          arguments: ["arg1"],
+          prompt: "Fix $arg1.",
+        },
+        label: "/github-fix",
+        description: "Repo GitHub fixer",
+      },
       {
         id: "provider-slash-command:claudeAgent:gh-fix-ci",
         type: "provider-slash-command",
@@ -61,7 +86,10 @@ describe("searchSlashCommandItems", () => {
         description: "General GitHub help",
       },
     ] satisfies Array<
-      Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" }>
+      Extract<
+        ComposerCommandItem,
+        { type: "slash-command" | "repo-command" | "provider-slash-command" }
+      >
     >;
 
     expect(searchSlashCommandItems(items, "gfc").map((item) => item.id)).toEqual([

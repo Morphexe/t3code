@@ -18,6 +18,7 @@ import {
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
+  resolvePromptFromRepoCommands,
   resolveSendEnvMode,
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
@@ -86,6 +87,44 @@ describe("buildExpiredTerminalContextToastCopy", () => {
     expect(buildExpiredTerminalContextToastCopy(2, "omitted")).toEqual({
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
+    });
+  });
+});
+
+describe("resolvePromptFromRepoCommands", () => {
+  it("replaces a repo slash command with its rendered prompt", () => {
+    expect(
+      resolvePromptFromRepoCommands({
+        prompt: "/commit-shit repo1 repo2",
+        commands: [
+          {
+            name: "commit-shit",
+            arguments: ["arg1", "arg2"],
+            prompt: "Please Commit $arg1 to $arg2 else.",
+          },
+        ],
+      }),
+    ).toEqual({
+      prompt: "Please Commit repo1 to repo2 else.",
+      commandName: "commit-shit",
+    });
+  });
+
+  it("leaves non-matching prompts unchanged", () => {
+    expect(
+      resolvePromptFromRepoCommands({
+        prompt: "/unknown repo1 repo2",
+        commands: [
+          {
+            name: "commit-shit",
+            arguments: ["arg1", "arg2"],
+            prompt: "Please Commit $arg1 to $arg2 else.",
+          },
+        ],
+      }),
+    ).toEqual({
+      prompt: "/unknown repo1 repo2",
+      commandName: null,
     });
   });
 });
