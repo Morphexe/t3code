@@ -5892,11 +5892,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   "arguments": ["ticket"],
                   "steps": [
                     {
-                      "type": "createWorktree",
-                      "baseBranch": "main",
-                      "branch": "$ticket"
-                    },
-                    {
                       "type": "startTurn",
                       "prompt": "Work on $ticket."
                     }
