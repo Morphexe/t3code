@@ -20,6 +20,7 @@ describe("searchSlashCommandItems", () => {
         id: "repo-command:commit-shit",
         type: "repo-command",
         command: {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "Please Commit $arg1 to $arg2 else.",
@@ -62,6 +63,7 @@ describe("searchSlashCommandItems", () => {
         id: "repo-command:github-fix",
         type: "repo-command",
         command: {
+          kind: "prompt",
           name: "github-fix",
           arguments: ["arg1"],
           prompt: "Fix $arg1.",

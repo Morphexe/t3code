@@ -28,7 +28,18 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 
+export const NotificationSoundPreset = Schema.Literals(["off", "bell", "chime", "glass", "pop"]);
+export type NotificationSoundPreset = typeof NotificationSoundPreset.Type;
+export const DEFAULT_AGENT_REQUIRES_INPUT_SOUND: NotificationSoundPreset = "bell";
+export const DEFAULT_AGENT_FINISHED_SOUND: NotificationSoundPreset = "chime";
+
 export const ClientSettingsSchema = Schema.Struct({
+  agentFinishedSound: NotificationSoundPreset.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_FINISHED_SOUND)),
+  ),
+  agentRequiresInputSound: NotificationSoundPreset.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_REQUIRES_INPUT_SOUND)),
+  ),
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

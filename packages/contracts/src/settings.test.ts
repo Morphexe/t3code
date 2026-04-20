@@ -2,10 +2,38 @@ import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import {
+  ClientSettingsSchema,
+  DEFAULT_AGENT_FINISHED_SOUND,
+  DEFAULT_AGENT_REQUIRES_INPUT_SOUND,
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "./settings.ts";
 
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
+
+describe("ClientSettingsSchema", () => {
+  it("defaults agent notification sounds", () => {
+    expect(DEFAULT_CLIENT_SETTINGS.agentRequiresInputSound).toBe(
+      DEFAULT_AGENT_REQUIRES_INPUT_SOUND,
+    );
+    expect(DEFAULT_CLIENT_SETTINGS.agentFinishedSound).toBe(DEFAULT_AGENT_FINISHED_SOUND);
+  });
+
+  it("migrates older persisted documents without notification sound settings", () => {
+    const decoded = decodeClientSettings({
+      timestampFormat: "24-hour",
+    });
+
+    expect(decoded.agentRequiresInputSound).toBe(DEFAULT_AGENT_REQUIRES_INPUT_SOUND);
+    expect(decoded.agentFinishedSound).toBe(DEFAULT_AGENT_FINISHED_SOUND);
+    expect(decoded.timestampFormat).toBe("24-hour");
+  });
+});
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
@@ -15,8 +43,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.providerInstances).toEqual({});
-    // Legacy `providers` struct is still hydrated with its per-driver defaults
-    // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
   });
 
@@ -45,9 +71,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
     expect(decoded.providerInstances[personalId]?.driver).toBe("codex");
     expect(decoded.providerInstances[workId]?.config).toEqual({ homePath: "~/.codex_work" });
-    // Critical: a config naming a driver this build does not know about
-    // (`ollama` is not in `ProviderDriverKind`) must round-trip without loss.
-    // The runtime handles "driver not installed" — the schema must not.
     expect(decoded.providerInstances[ollamaId]?.driver).toBe("ollama");
     expect(decoded.providerInstances[ollamaId]?.config).toEqual({
       endpoint: "http://localhost:11434",

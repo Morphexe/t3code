@@ -15,6 +15,7 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
+  ProjectRunCommandError,
   ProjectReadFileError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
@@ -53,6 +54,7 @@ import { VcsProvisioningService } from "./vcs/VcsProvisioningService.ts";
 import { GitWorkflowService } from "./git/GitWorkflowService.ts";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner.ts";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
+import { runProjectWorkflowCommand } from "./project/projectCommandRunner.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import * as SourceControlDiscoveryLayer from "./sourceControl/SourceControlDiscovery.ts";
@@ -169,6 +171,13 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const sessions = yield* SessionCredentialService;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
+      const runProjectCommand = runProjectWorkflowCommand({
+        git,
+        orchestrationEngine,
+        projectSetupScriptRunner,
+        terminalManager,
+        workspaceFileSystem,
+      });
 
       const loadAuthAccessSnapshot = () =>
         Effect.all({
@@ -922,6 +931,24 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   cause,
                 });
               }),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsRunCommand]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsRunCommand,
+            runProjectCommand(input).pipe(
+              Effect.mapError((cause) =>
+                cause instanceof ProjectRunCommandError
+                  ? cause
+                  : new ProjectRunCommandError({
+                      message:
+                        cause instanceof Error
+                          ? cause.message
+                          : "Failed to run project workflow command.",
+                      cause,
+                    }),
+              ),
             ),
             { "rpc.aggregate": "workspace" },
           ),

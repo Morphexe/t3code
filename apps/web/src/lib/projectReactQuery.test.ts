@@ -66,6 +66,7 @@ describe("repoCommandsQueryOptions", () => {
     expect(result).toEqual({
       commands: [
         {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "Please Commit $arg1 to $arg2 else.",
