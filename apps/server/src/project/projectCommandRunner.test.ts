@@ -1,4 +1,4 @@
-import { MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { MessageId, type OrchestrationReadModel, ProjectId, ThreadId } from "@t3tools/contracts";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,8 +6,6 @@ import { runProjectWorkflowCommand } from "./projectCommandRunner.ts";
 import type { GitCoreShape } from "../git/Services/GitCore.ts";
 import type { OrchestrationEngineShape } from "../orchestration/Services/OrchestrationEngine.ts";
 import type { ProjectSetupScriptRunnerShape } from "./Services/ProjectSetupScriptRunner.ts";
-import type { TerminalManagerShape } from "../terminal/Services/Manager.ts";
-import type { WorkspaceFileSystemShape } from "../workspace/Services/WorkspaceFileSystem.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
@@ -15,17 +13,12 @@ const MESSAGE_ID = MessageId.make("message-1");
 
 function makeDependencies(overrides?: {
   readonly commandsFileContents?: string;
-  readonly readModel?: ReturnType<OrchestrationEngineShape["getReadModel"]> extends Effect.Effect<
-    infer T,
-    never,
-    never
-  >
-    ? T
-    : never;
+  readonly readModel?: OrchestrationReadModel;
   readonly createWorktree?: GitCoreShape["createWorktree"];
   readonly dispatch?: OrchestrationEngineShape["dispatch"];
   readonly runSetupScript?: ProjectSetupScriptRunnerShape["runForThread"];
 }) {
+  const timestamp = "2026-04-20T12:00:00.000Z";
   const commandsFileContents =
     overrides?.commandsFileContents ??
     `{
@@ -56,6 +49,7 @@ function makeDependencies(overrides?: {
   const readModel =
     overrides?.readModel ??
     ({
+      snapshotSequence: 0,
       projects: [
         {
           id: PROJECT_ID,
@@ -71,10 +65,14 @@ function makeDependencies(overrides?: {
               runOnWorktreeCreate: false,
             },
           ],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          deletedAt: null,
         },
       ],
       threads: [],
-    } as const);
+      updatedAt: timestamp,
+    } satisfies OrchestrationReadModel);
 
   const dispatch = vi.fn((command) =>
     Effect.succeed({
@@ -131,26 +129,28 @@ function makeDependencies(overrides?: {
     }),
   );
 
-  return {
-    deps: {
-      git: {
-        createWorktree: overrides?.createWorktree ?? createWorktree,
-      } as GitCoreShape,
-      orchestrationEngine: {
-        getReadModel: () => Effect.succeed(readModel),
-        dispatch: overrides?.dispatch ?? dispatch,
-      } as OrchestrationEngineShape,
-      projectSetupScriptRunner: {
-        runForThread: overrides?.runSetupScript ?? runSetupScript,
-      } as ProjectSetupScriptRunnerShape,
-      terminalManager: {
-        open: terminalOpen,
-        write: terminalWrite,
-      } as TerminalManagerShape,
-      workspaceFileSystem: {
-        readFile,
-      } as WorkspaceFileSystemShape,
+  const deps: Parameters<typeof runProjectWorkflowCommand>[0] = {
+    git: {
+      createWorktree: overrides?.createWorktree ?? createWorktree,
     },
+    orchestrationEngine: {
+      getReadModel: () => Effect.succeed(readModel),
+      dispatch: overrides?.dispatch ?? dispatch,
+    },
+    projectSetupScriptRunner: {
+      runForThread: overrides?.runSetupScript ?? runSetupScript,
+    },
+    terminalManager: {
+      open: terminalOpen,
+      write: terminalWrite,
+    },
+    workspaceFileSystem: {
+      readFile,
+    },
+  };
+
+  return {
+    deps,
     spies: {
       dispatch,
       createWorktree,
@@ -232,6 +232,7 @@ describe("runProjectWorkflowCommand", () => {
   it("deletes a newly created thread when a later workflow step fails", async () => {
     const { deps, spies } = makeDependencies({
       readModel: {
+        snapshotSequence: 0,
         projects: [
           {
             id: PROJECT_ID,
@@ -239,10 +240,14 @@ describe("runProjectWorkflowCommand", () => {
             workspaceRoot: "/repo",
             defaultModelSelection: null,
             scripts: [],
+            createdAt: "2026-04-20T12:00:00.000Z",
+            updatedAt: "2026-04-20T12:00:00.000Z",
+            deletedAt: null,
           },
         ],
         threads: [],
-      } as const,
+        updatedAt: "2026-04-20T12:00:00.000Z",
+      },
     });
 
     await expect(
@@ -274,14 +279,114 @@ describe("runProjectWorkflowCommand", () => {
           },
         }),
       ),
-    ).rejects.toThrow(
-      "Project script 'bootstrap-ticket' was not found for 'create-ticket'.",
-    );
+    ).rejects.toThrow("Project script 'bootstrap-ticket' was not found for 'create-ticket'.");
 
     expect(spies.dispatch.mock.calls.map((call) => call[0]?.type)).toEqual([
       "thread.create",
       "thread.meta.update",
       "thread.delete",
     ]);
+  });
+
+  it("resolves project and worktree context from an existing thread", async () => {
+    const { deps, spies } = makeDependencies({
+      commandsFileContents: `{
+        "commands": [
+          {
+            "kind": "workflow",
+            "name": "continue-ticket",
+            "arguments": ["ticket"],
+            "steps": [
+              {
+                "type": "runProjectScript",
+                "scriptId": "bootstrap-ticket"
+              },
+              {
+                "type": "startTurn",
+                "prompt": "Continue $ticket."
+              }
+            ]
+          }
+        ]
+      }`,
+      readModel: {
+        snapshotSequence: 0,
+        projects: [
+          {
+            id: PROJECT_ID,
+            title: "Project",
+            workspaceRoot: "/repo",
+            defaultModelSelection: null,
+            scripts: [
+              {
+                id: "bootstrap-ticket",
+                name: "Bootstrap Ticket",
+                command: "pnpm bootstrap-ticket",
+                icon: "play",
+                runOnWorktreeCreate: false,
+              },
+            ],
+            createdAt: "2026-04-20T12:00:00.000Z",
+            updatedAt: "2026-04-20T12:00:00.000Z",
+            deletedAt: null,
+          },
+        ],
+        threads: [
+          {
+            id: THREAD_ID,
+            projectId: PROJECT_ID,
+            title: "ABC-123",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: "ABC-123",
+            worktreePath: "/tmp/worktrees/ABC-123",
+            latestTurn: null,
+            createdAt: "2026-04-20T12:00:00.000Z",
+            updatedAt: "2026-04-20T12:00:00.000Z",
+            archivedAt: null,
+            deletedAt: null,
+            messages: [],
+            proposedPlans: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          },
+        ],
+        updatedAt: "2026-04-20T12:00:00.000Z",
+      },
+    });
+
+    const result = await Effect.runPromise(
+      runProjectWorkflowCommand(deps)({
+        cwd: "/tmp/worktrees/ABC-123",
+        invocation: "/continue-ticket ABC-123",
+        threadId: THREAD_ID,
+        messageId: MESSAGE_ID,
+        modelSelection: {
+          provider: "codex",
+          model: "gpt-5-codex",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: "2026-04-20T12:00:00.000Z",
+      }),
+    );
+
+    expect(result).toEqual({
+      sequence: 3,
+      messageText: "Continue ABC-123.",
+    });
+    expect(spies.terminalOpen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: THREAD_ID,
+        cwd: "/tmp/worktrees/ABC-123",
+        worktreePath: "/tmp/worktrees/ABC-123",
+      }),
+    );
+    expect(spies.dispatch.mock.calls.map((call) => call[0]?.type)).toEqual(["thread.turn.start"]);
   });
 });

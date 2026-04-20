@@ -165,11 +165,7 @@ function parseCommandSharedFields(
       ? undefined
       : asTrimmedString(record.description, `commands[${index}].description`);
   if (description !== undefined) {
-    assertTemplateArgumentsDeclared(
-      description,
-      argumentsList,
-      `commands[${index}].description`,
-    );
+    assertTemplateArgumentsDeclared(description, argumentsList, `commands[${index}].description`);
   }
 
   return {
@@ -500,13 +496,11 @@ export function resolveRepoCommandPromptFromInvocation(input: {
 export function resolveRepoWorkflowCommandFromInvocation(input: {
   readonly commands: ReadonlyArray<RepoCommandDefinition>;
   readonly invocation: string;
-}):
-  | {
-      readonly command: RepoWorkflowCommandDefinition;
-      readonly steps: ReadonlyArray<ResolvedRepoWorkflowCommandStep>;
-      readonly startTurnPrompt: string;
-    }
-  | null {
+}): {
+  readonly command: RepoWorkflowCommandDefinition;
+  readonly steps: ReadonlyArray<ResolvedRepoWorkflowCommandStep>;
+  readonly startTurnPrompt: string;
+} | null {
   const invocation = parseRepoCommandInvocation(input.invocation);
   if (!invocation) {
     return null;

@@ -15,7 +15,6 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
-  ProjectRunCommandError,
   ProjectReadFileError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
@@ -935,23 +934,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.projectsRunCommand]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectsRunCommand,
-            runProjectCommand(input).pipe(
-              Effect.mapError((cause) =>
-                cause instanceof ProjectRunCommandError
-                  ? cause
-                  : new ProjectRunCommandError({
-                      message:
-                        cause instanceof Error
-                          ? cause.message
-                          : "Failed to run project workflow command.",
-                      cause,
-                    }),
-              ),
-            ),
-            { "rpc.aggregate": "workspace" },
-          ),
+          observeRpcEffect(WS_METHODS.projectsRunCommand, runProjectCommand(input), {
+            "rpc.aggregate": "workspace",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, open.openInEditor(input), {
             "rpc.aggregate": "workspace",
