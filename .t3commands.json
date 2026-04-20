@@ -1,0 +1,9 @@
+{
+  "commands": [
+    {
+      "name": "test-command",
+      "arguments": [],
+      "prompt": "You should tell a joke to the user."
+    }
+  ]
+}

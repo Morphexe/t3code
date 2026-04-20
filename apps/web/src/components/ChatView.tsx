@@ -24,6 +24,7 @@ import {
   DEFAULT_REPO_COMMANDS_FILE_PATH,
   parseCreateRepoCommandInvocation,
   parseRepoCommandsJson,
+  resolveRepoWorkflowCommandFromInvocation,
   stringifyRepoCommandsFile,
   upsertRepoCommand,
 } from "@t3tools/shared/repoCommands";
@@ -2493,6 +2494,144 @@ export default function ChatView(props: ChatViewProps) {
           title: "Could not create repo command",
           description: error instanceof Error ? error.message : "Failed to write repo command.",
         });
+        return;
+      }
+
+      try {
+        const resolvedWorkflowCommand = resolveRepoWorkflowCommandFromInvocation({
+          commands: repoCommands,
+          invocation: trimmed,
+        });
+        if (resolvedWorkflowCommand) {
+          if (!activeProject || !repoCommandsCwd) {
+            toastManager.add({
+              type: "error",
+              title: "Could not run workflow command",
+              description: "Project command execution is unavailable for this thread.",
+            });
+            return;
+          }
+          const api = readEnvironmentApi(environmentId);
+          if (!api) {
+            toastManager.add({
+              type: "error",
+              title: "Could not run workflow command",
+              description: "Environment API is unavailable for this thread.",
+            });
+            return;
+          }
+
+          const threadIdForSend = activeThread.id;
+          const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
+          const createWorktreeStep =
+            resolvedWorkflowCommand.steps.find((step) => step.type === "createWorktree") ?? null;
+          if (createWorktreeStep && !isFirstMessage) {
+            setThreadError(
+              threadIdForSend,
+              `/${resolvedWorkflowCommand.command.name} can only create a worktree before the first message in a thread.`,
+            );
+            return;
+          }
+          if (createWorktreeStep && activeThread.worktreePath) {
+            setThreadError(
+              threadIdForSend,
+              `/${resolvedWorkflowCommand.command.name} cannot create a new worktree because this thread already has one.`,
+            );
+            return;
+          }
+
+          sendInFlightRef.current = true;
+          beginLocalDispatch({ preparingWorktree: createWorktreeStep !== null });
+          const messageTextForSend = resolvedWorkflowCommand.startTurnPrompt;
+          const messageIdForSend = newMessageId();
+          const messageCreatedAt = new Date().toISOString();
+          const outgoingMessageText = formatOutgoingPrompt({
+            provider: ctxSelectedProvider,
+            model: ctxSelectedModel,
+            models: ctxSelectedProviderModels,
+            effort: ctxSelectedPromptEffort,
+            text: messageTextForSend,
+          });
+          const optimisticMessage = {
+            id: messageIdForSend,
+            role: "user" as const,
+            text: outgoingMessageText,
+            createdAt: messageCreatedAt,
+            streaming: false,
+          };
+          isAtEndRef.current = true;
+          showScrollDebouncer.current.cancel();
+          setShowScrollToBottom(false);
+          await legendListRef.current?.scrollToEnd?.({ animated: false });
+          setOptimisticUserMessages((existing) => [...existing, optimisticMessage]);
+          promptRef.current = "";
+          clearComposerDraftContent(composerDraftTarget);
+          composerRef.current?.resetCursorState();
+          setThreadError(threadIdForSend, null);
+
+          const title = truncate(messageTextForSend);
+          const threadCreateModelSelection = createModelSelection(
+            ctxSelectedProvider,
+            ctxSelectedModel ||
+              activeProject.defaultModelSelection?.model ||
+              DEFAULT_MODEL_BY_PROVIDER.codex,
+            ctxSelectedModelSelection.options,
+          );
+
+          try {
+            if (isServerThread) {
+              await persistThreadSettingsForNextTurn({
+                threadId: threadIdForSend,
+                createdAt: messageCreatedAt,
+                modelSelection: ctxSelectedModelSelection,
+                runtimeMode,
+                interactionMode,
+              });
+            }
+
+            await api.projects.runCommand({
+              cwd: repoCommandsCwd,
+              invocation: trimmed,
+              threadId: threadIdForSend,
+              messageId: messageIdForSend,
+              modelSelection: ctxSelectedModelSelection,
+              runtimeMode,
+              interactionMode,
+              createdAt: messageCreatedAt,
+              ...(isLocalDraftThread
+                ? {
+                    createThread: {
+                      projectId: activeProject.id,
+                      title,
+                      modelSelection: threadCreateModelSelection,
+                      runtimeMode,
+                      interactionMode,
+                      branch: activeThreadBranch,
+                      worktreePath: activeThread.worktreePath,
+                      createdAt: activeThread.createdAt,
+                    },
+                  }
+                : {}),
+            });
+          } catch (error) {
+            setOptimisticUserMessages((existing) =>
+              existing.filter((message) => message.id !== messageIdForSend),
+            );
+            setThreadError(
+              threadIdForSend,
+              error instanceof Error ? error.message : "Failed to run workflow command.",
+            );
+          } finally {
+            sendInFlightRef.current = false;
+            resetLocalDispatch();
+          }
+          return;
+        }
+      } catch (error) {
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to resolve workflow command.",
+        );
         return;
       }
     }

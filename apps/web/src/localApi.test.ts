@@ -51,6 +51,7 @@ const rpcClientMock = {
     readFile: vi.fn(),
     searchEntries: vi.fn(),
     writeFile: vi.fn(),
+    runCommand: vi.fn(),
   },
   filesystem: {
     browse: vi.fn(),
@@ -549,6 +550,8 @@ describe("wsApi", () => {
 
   it("reads and writes persistence through the desktop bridge when available", async () => {
     const clientSettings = {
+      agentFinishedSound: "chime" as const,
+      agentRequiresInputSound: "bell" as const,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
@@ -606,6 +609,8 @@ describe("wsApi", () => {
     const { createLocalApi } = await import("./localApi");
     const api = createLocalApi(rpcClientMock as never);
     const clientSettings = {
+      agentFinishedSound: "chime" as const,
+      agentRequiresInputSound: "bell" as const,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,

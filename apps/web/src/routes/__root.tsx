@@ -9,8 +9,13 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useShallow } from "zustand/react/shallow";
 
 import { APP_DISPLAY_NAME } from "../branding";
+import {
+  deriveAgentNotificationTransition,
+  playNotificationSoundSequence,
+} from "../agentNotificationSounds";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import {
@@ -35,7 +40,7 @@ import {
   useServerConfigUpdatedSubscription,
   useServerWelcomeSubscription,
 } from "../rpc/serverState";
-import { useStore } from "../store";
+import { selectSidebarThreadsAcrossEnvironments, useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
@@ -95,6 +100,7 @@ function RootRouteView() {
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap />
         <EnvironmentConnectionManagerBootstrap />
+        <AgentNotificationSoundCoordinator />
         <EventRouter />
         <WebSocketConnectionCoordinator />
         <SlowRpcAckToastCoordinator />
@@ -201,6 +207,33 @@ function EnvironmentConnectionManagerBootstrap() {
   useEffect(() => {
     return startEnvironmentConnectionService(queryClient);
   }, [queryClient]);
+
+  return null;
+}
+
+function AgentNotificationSoundCoordinator() {
+  const threads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const agentRequiresInputSound = useSettings((settings) => settings.agentRequiresInputSound);
+  const agentFinishedSound = useSettings((settings) => settings.agentFinishedSound);
+  const previousThreadStateRef = useRef<
+    ReturnType<typeof deriveAgentNotificationTransition>["next"] | null
+  >(null);
+
+  useEffect(() => {
+    const transition = deriveAgentNotificationTransition(previousThreadStateRef.current, threads);
+    previousThreadStateRef.current = transition.next;
+
+    const presets = [
+      ...(transition.shouldPlayRequiresInputSound ? [agentRequiresInputSound] : []),
+      ...(transition.shouldPlayFinishedSound ? [agentFinishedSound] : []),
+    ];
+
+    if (presets.length === 0) {
+      return;
+    }
+
+    void playNotificationSoundSequence(presets);
+  }, [agentFinishedSound, agentRequiresInputSound, threads]);
 
   return null;
 }

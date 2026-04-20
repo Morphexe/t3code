@@ -210,6 +210,10 @@ function createMockEnvironmentApi(input: {
       writeFile: (async () => ({
         relativePath: "ignored.txt",
       })) as EnvironmentApi["projects"]["writeFile"],
+      runCommand: (async () => ({
+        sequence: 1,
+        messageText: "Run workflow.",
+      })) as EnvironmentApi["projects"]["runCommand"],
     },
     filesystem: {
       browse: input.browse,
@@ -5861,6 +5865,84 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await vi.waitFor(
         () => {
           expect(menuItem.textContent).toContain("/commit-shit");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("runs a workflow repo command through projects.runCommand", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-workflow-command-target" as MessageId,
+        targetText: "workflow command thread",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsReadFile) {
+          return {
+            relativePath: ".t3commands.json",
+            contents: `{
+              "commands": [
+                {
+                  "kind": "workflow",
+                  "name": "create-ticket",
+                  "arguments": ["ticket"],
+                  "steps": [
+                    {
+                      "type": "createWorktree",
+                      "baseBranch": "main",
+                      "branch": "$ticket"
+                    },
+                    {
+                      "type": "startTurn",
+                      "prompt": "Work on $ticket."
+                    }
+                  ]
+                }
+              ]
+            }`,
+          };
+        }
+        if (body._tag === WS_METHODS.projectsRunCommand) {
+          return {
+            sequence: 1,
+            messageText: "Work on ABC-123.",
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "/create-ticket ABC-123");
+      await waitForLayout();
+
+      const sendButton = await waitForSendButton();
+      expect(sendButton.disabled).toBe(false);
+      sendButton.click();
+
+      await vi.waitFor(
+        () => {
+          const runCommandRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.projectsRunCommand,
+          ) as
+            | {
+                _tag: string;
+                invocation?: string;
+                cwd?: string;
+                threadId?: string;
+              }
+            | undefined;
+
+          expect(runCommandRequest).toMatchObject({
+            _tag: WS_METHODS.projectsRunCommand,
+            invocation: "/create-ticket ABC-123",
+            cwd: "/repo/project",
+            threadId: THREAD_ID,
+          });
         },
         { timeout: 8_000, interval: 16 },
       );

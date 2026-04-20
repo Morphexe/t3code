@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import {
+  type NotificationSoundPreset,
   PROVIDER_DISPLAY_NAMES,
   type DesktopUpdateChannel,
   type ScopedThreadRef,
@@ -24,6 +25,7 @@ import { normalizeModelSlug } from "@t3tools/shared/model";
 import { createModelSelection } from "@t3tools/shared/model";
 import { Equal } from "effect";
 import { APP_VERSION } from "../../branding";
+import { playNotificationSoundPreset } from "../../agentNotificationSounds";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -100,6 +102,14 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
+
+const NOTIFICATION_SOUND_LABELS = {
+  off: "Off",
+  bell: "Bell",
+  chime: "Chime",
+  glass: "Glass",
+  pop: "Pop",
+} as const satisfies Record<NotificationSoundPreset, string>;
 
 type InstallProviderSettings = {
   provider: ProviderKind;
@@ -478,6 +488,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
+      ...(settings.agentRequiresInputSound !== DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound
+        ? ["Agent requires input sound"]
+        : []),
+      ...(settings.agentFinishedSound !== DEFAULT_UNIFIED_SETTINGS.agentFinishedSound
+        ? ["Agent finished sound"]
+        : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
       ...(areProviderSettingsDirty ? ["Providers"] : []),
     ],
@@ -486,6 +502,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       isGitWritingModelDirty,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
+      settings.agentFinishedSound,
+      settings.agentRequiresInputSound,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffWordWrap,
@@ -664,6 +682,13 @@ export function GeneralSettingsPanel() {
   const openDiagnosticsError = openPathErrorByTarget.logsDirectory ?? null;
   const isOpeningKeybindings = openingPathByTarget.keybindings;
   const isOpeningLogsDirectory = openingPathByTarget.logsDirectory;
+  const updateNotificationSound = useCallback(
+    (key: "agentRequiresInputSound" | "agentFinishedSound", value: NotificationSoundPreset) => {
+      updateSettings({ [key]: value });
+      void playNotificationSoundPreset(value);
+    },
+    [updateSettings],
+  );
 
   const addCustomModel = useCallback(
     (provider: ProviderKind) => {
@@ -1054,6 +1079,88 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Confirm thread deletion"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Agent requires input"
+          description="Played when an agent pauses for approval or asks for a response."
+          resetAction={
+            settings.agentRequiresInputSound !==
+            DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound ? (
+              <SettingResetButton
+                label="agent requires input sound"
+                onClick={() =>
+                  updateSettings({
+                    agentRequiresInputSound: DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.agentRequiresInputSound}
+              onValueChange={(value) => {
+                if (typeof value === "string" && value in NOTIFICATION_SOUND_LABELS) {
+                  updateNotificationSound(
+                    "agentRequiresInputSound",
+                    value as NotificationSoundPreset,
+                  );
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Agent requires input sound">
+                <SelectValue>
+                  {NOTIFICATION_SOUND_LABELS[settings.agentRequiresInputSound]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Agent finished"
+          description="Played when a turn settles and the agent stops working."
+          resetAction={
+            settings.agentFinishedSound !== DEFAULT_UNIFIED_SETTINGS.agentFinishedSound ? (
+              <SettingResetButton
+                label="agent finished sound"
+                onClick={() =>
+                  updateSettings({
+                    agentFinishedSound: DEFAULT_UNIFIED_SETTINGS.agentFinishedSound,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.agentFinishedSound}
+              onValueChange={(value) => {
+                if (typeof value === "string" && value in NOTIFICATION_SOUND_LABELS) {
+                  updateNotificationSound("agentFinishedSound", value as NotificationSoundPreset);
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Agent finished sound">
+                <SelectValue>{NOTIFICATION_SOUND_LABELS[settings.agentFinishedSound]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
 

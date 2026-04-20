@@ -3,17 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   createRepoCommandDefinition,
   inferRepoCommandArgumentsFromPrompt,
+  isRepoPromptCommand,
+  isRepoWorkflowCommand,
   parseCreateRepoCommandInvocation,
   parseRepoCommandInvocation,
   parseRepoCommandsJson,
   renderRepoCommandPrompt,
   resolveRepoCommandPromptFromInvocation,
+  resolveRepoWorkflowCommandFromInvocation,
   stringifyRepoCommandsFile,
   upsertRepoCommand,
 } from "./repoCommands.ts";
 
 describe("parseRepoCommandsJson", () => {
-  it("parses a simple repo command config", () => {
+  it("parses a simple prompt repo command config", () => {
     const parsed = parseRepoCommandsJson(`{
       "commands": [
         {
@@ -27,9 +30,66 @@ describe("parseRepoCommandsJson", () => {
     expect(parsed).toEqual({
       commands: [
         {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "Please Commit $arg1 to $arg2 else.",
+        },
+      ],
+    });
+  });
+
+  it("parses a workflow repo command config", () => {
+    const parsed = parseRepoCommandsJson(`{
+      "commands": [
+        {
+          "kind": "workflow",
+          "name": "create-ticket",
+          "description": "Create a worktree for $ticket",
+          "arguments": ["ticket"],
+          "steps": [
+            {
+              "type": "createWorktree",
+              "baseBranch": "main",
+              "branch": "$ticket",
+              "runSetupScript": true
+            },
+            {
+              "type": "runProjectScript",
+              "scriptId": "bootstrap-ticket"
+            },
+            {
+              "type": "startTurn",
+              "prompt": "Work on $ticket."
+            }
+          ]
+        }
+      ]
+    }`);
+
+    expect(parsed).toEqual({
+      commands: [
+        {
+          kind: "workflow",
+          name: "create-ticket",
+          description: "Create a worktree for $ticket",
+          arguments: ["ticket"],
+          steps: [
+            {
+              type: "createWorktree",
+              baseBranch: "main",
+              branch: "$ticket",
+              runSetupScript: true,
+            },
+            {
+              type: "runProjectScript",
+              scriptId: "bootstrap-ticket",
+            },
+            {
+              type: "startTurn",
+              prompt: "Work on $ticket.",
+            },
+          ],
         },
       ],
     });
@@ -49,6 +109,27 @@ describe("parseRepoCommandsJson", () => {
     ).toThrow("commands[0].prompt references '$arg2' but it is not declared in arguments.");
   });
 
+  it("rejects workflow commands without a terminal start step", () => {
+    expect(() =>
+      parseRepoCommandsJson(`{
+        "commands": [
+          {
+            "kind": "workflow",
+            "name": "create-ticket",
+            "arguments": ["ticket"],
+            "steps": [
+              {
+                "type": "createWorktree",
+                "baseBranch": "main",
+                "branch": "$ticket"
+              }
+            ]
+          }
+        ]
+      }`),
+    ).toThrow("commands[0] must contain exactly one startTurn step.");
+  });
+
   it("rejects duplicate command names", () => {
     expect(() =>
       parseRepoCommandsJson(`{
@@ -59,9 +140,15 @@ describe("parseRepoCommandsJson", () => {
             "prompt": "Please Commit $arg1."
           },
           {
+            "kind": "workflow",
             "name": "commit-shit",
-            "arguments": ["arg1"],
-            "prompt": "Please Commit $arg1 again."
+            "arguments": [],
+            "steps": [
+              {
+                "type": "startTurn",
+                "prompt": "Do it."
+              }
+            ]
           }
         ]
       }`),
@@ -100,6 +187,7 @@ describe("createRepoCommandDefinition", () => {
         prompt: "Please Commit $arg1 to $arg2 else.",
       }),
     ).toEqual({
+      kind: "prompt",
       name: "commit-shit",
       arguments: ["arg1", "arg2"],
       prompt: "Please Commit $arg1 to $arg2 else.",
@@ -115,6 +203,7 @@ describe("parseCreateRepoCommandInvocation", () => {
       ),
     ).toEqual({
       command: {
+        kind: "prompt",
         name: "commit-shit",
         arguments: ["arg1", "arg2"],
         prompt: "Please Commit $arg1 to $arg2 else.",
@@ -131,10 +220,11 @@ describe("parseCreateRepoCommandInvocation", () => {
 
 describe("renderRepoCommandPrompt", () => {
   const command = {
+    kind: "prompt" as const,
     name: "commit-shit",
     arguments: ["arg1", "arg2"],
     prompt: "Please Commit $arg1 to $arg2 else. Repeat: $arg1.",
-  } as const;
+  };
 
   it("injects positional arguments into matching prompt placeholders", () => {
     expect(renderRepoCommandPrompt(command, ["repo1", "repo2"])).toBe(
@@ -154,6 +244,7 @@ describe("resolveRepoCommandPromptFromInvocation", () => {
     const result = resolveRepoCommandPromptFromInvocation({
       commands: [
         {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "Please Commit $arg1 to $arg2 else.",
@@ -164,6 +255,7 @@ describe("resolveRepoCommandPromptFromInvocation", () => {
 
     expect(result).toEqual({
       command: {
+        kind: "prompt",
         name: "commit-shit",
         arguments: ["arg1", "arg2"],
         prompt: "Please Commit $arg1 to $arg2 else.",
@@ -171,15 +263,138 @@ describe("resolveRepoCommandPromptFromInvocation", () => {
       prompt: "Please Commit repo1 to repo2 else.",
     });
   });
+
+  it("ignores workflow commands", () => {
+    expect(
+      resolveRepoCommandPromptFromInvocation({
+        commands: [
+          {
+            kind: "workflow",
+            name: "create-ticket",
+            arguments: ["ticket"],
+            steps: [
+              {
+                type: "startTurn",
+                prompt: "Work on $ticket.",
+              },
+            ],
+          },
+        ],
+        invocation: "/create-ticket ABC-123",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("resolveRepoWorkflowCommandFromInvocation", () => {
+  it("resolves a workflow command into rendered steps", () => {
+    const result = resolveRepoWorkflowCommandFromInvocation({
+      commands: [
+        {
+          kind: "workflow",
+          name: "create-ticket",
+          arguments: ["ticket"],
+          steps: [
+            {
+              type: "createWorktree",
+              baseBranch: "main",
+              branch: "$ticket",
+              runSetupScript: true,
+            },
+            {
+              type: "runProjectScript",
+              scriptId: "bootstrap-ticket",
+            },
+            {
+              type: "startTurn",
+              prompt: "Work on $ticket.",
+            },
+          ],
+        },
+      ],
+      invocation: "/create-ticket ABC-123",
+    });
+
+    expect(result).toEqual({
+      command: {
+        kind: "workflow",
+        name: "create-ticket",
+        arguments: ["ticket"],
+        steps: [
+          {
+            type: "createWorktree",
+            baseBranch: "main",
+            branch: "$ticket",
+            runSetupScript: true,
+          },
+          {
+            type: "runProjectScript",
+            scriptId: "bootstrap-ticket",
+          },
+          {
+            type: "startTurn",
+            prompt: "Work on $ticket.",
+          },
+        ],
+      },
+      steps: [
+        {
+          type: "createWorktree",
+          baseBranch: "main",
+          branch: "ABC-123",
+          runSetupScript: true,
+        },
+        {
+          type: "runProjectScript",
+          scriptId: "bootstrap-ticket",
+        },
+        {
+          type: "startTurn",
+          prompt: "Work on ABC-123.",
+        },
+      ],
+      startTurnPrompt: "Work on ABC-123.",
+    });
+  });
+});
+
+describe("command kind guards", () => {
+  it("identifies prompt and workflow commands", () => {
+    const promptCommand = createRepoCommandDefinition({
+      name: "commit-shit",
+      prompt: "Commit $arg1.",
+    });
+    const workflowCommand = parseRepoCommandsJson(`{
+      "commands": [
+        {
+          "kind": "workflow",
+          "name": "create-ticket",
+          "arguments": ["ticket"],
+          "steps": [
+            {
+              "type": "startTurn",
+              "prompt": "Work on $ticket."
+            }
+          ]
+        }
+      ]
+    }`).commands[0]!;
+
+    expect(isRepoPromptCommand(promptCommand)).toBe(true);
+    expect(isRepoWorkflowCommand(promptCommand)).toBe(false);
+    expect(isRepoPromptCommand(workflowCommand)).toBe(false);
+    expect(isRepoWorkflowCommand(workflowCommand)).toBe(true);
+  });
 });
 
 describe("upsertRepoCommand", () => {
-  it("replaces an existing command with the same name", () => {
+  it("replaces an existing prompt command with the same name", () => {
     expect(
       upsertRepoCommand(
         {
           commands: [
             {
+              kind: "prompt",
               name: "commit-shit",
               arguments: ["arg1"],
               prompt: "Old $arg1",
@@ -187,6 +402,7 @@ describe("upsertRepoCommand", () => {
           ],
         },
         {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "New $arg1 $arg2",
@@ -195,6 +411,7 @@ describe("upsertRepoCommand", () => {
     ).toEqual({
       commands: [
         {
+          kind: "prompt",
           name: "commit-shit",
           arguments: ["arg1", "arg2"],
           prompt: "New $arg1 $arg2",
@@ -205,11 +422,12 @@ describe("upsertRepoCommand", () => {
 });
 
 describe("stringifyRepoCommandsFile", () => {
-  it("formats the commands file as stable JSON", () => {
+  it("formats prompt commands without forcing the prompt kind", () => {
     expect(
       stringifyRepoCommandsFile({
         commands: [
           {
+            kind: "prompt",
             name: "commit-shit",
             arguments: ["arg1", "arg2"],
             prompt: "Please Commit $arg1 to $arg2 else.",
@@ -225,6 +443,57 @@ describe("stringifyRepoCommandsFile", () => {
         "arg2"
       ],
       "prompt": "Please Commit $arg1 to $arg2 else."
+    }
+  ]
+}
+`);
+  });
+
+  it("formats workflow commands with explicit kinds and steps", () => {
+    expect(
+      stringifyRepoCommandsFile({
+        commands: [
+          {
+            kind: "workflow",
+            name: "create-ticket",
+            arguments: ["ticket"],
+            description: "Create a worktree for $ticket",
+            steps: [
+              {
+                type: "createWorktree",
+                baseBranch: "main",
+                branch: "$ticket",
+                runSetupScript: true,
+              },
+              {
+                type: "startTurn",
+                prompt: "Work on $ticket.",
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe(`{
+  "commands": [
+    {
+      "kind": "workflow",
+      "name": "create-ticket",
+      "arguments": [
+        "ticket"
+      ],
+      "description": "Create a worktree for $ticket",
+      "steps": [
+        {
+          "type": "createWorktree",
+          "baseBranch": "main",
+          "branch": "$ticket",
+          "runSetupScript": true
+        },
+        {
+          "type": "startTurn",
+          "prompt": "Work on $ticket."
+        }
+      ]
     }
   ]
 }

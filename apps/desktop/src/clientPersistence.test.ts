@@ -49,6 +49,8 @@ function makeSecretStorage(available: boolean): DesktopSecretStorage {
 }
 
 const clientSettings: ClientSettings = {
+  agentFinishedSound: "glass",
+  agentRequiresInputSound: "bell",
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,

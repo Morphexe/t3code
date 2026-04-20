@@ -91,6 +91,7 @@ describe("resolvePromptFromRepoCommands", () => {
         prompt: "/commit-shit repo1 repo2",
         commands: [
           {
+            kind: "prompt",
             name: "commit-shit",
             arguments: ["arg1", "arg2"],
             prompt: "Please Commit $arg1 to $arg2 else.",
@@ -109,6 +110,7 @@ describe("resolvePromptFromRepoCommands", () => {
         prompt: "/unknown repo1 repo2",
         commands: [
           {
+            kind: "prompt",
             name: "commit-shit",
             arguments: ["arg1", "arg2"],
             prompt: "Please Commit $arg1 to $arg2 else.",

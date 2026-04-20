@@ -133,6 +133,12 @@ const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 
 function describeRepoCommand(command: RepoCommandDefinition): string {
+  if (command.description) {
+    return command.description;
+  }
+  if (command.kind === "workflow") {
+    return "Run project workflow";
+  }
   if (command.arguments.length === 0) {
     return "Run repo command";
   }
