@@ -552,6 +552,7 @@ describe("wsApi", () => {
     const clientSettings = {
       agentFinishedSound: "chime" as const,
       agentRequiresInputSound: "bell" as const,
+      autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
@@ -612,6 +613,7 @@ describe("wsApi", () => {
     const clientSettings = {
       agentFinishedSound: "chime" as const,
       agentRequiresInputSound: "bell" as const,
+      autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
