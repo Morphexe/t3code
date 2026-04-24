@@ -12,6 +12,18 @@ That gives you:
 - transport security at the network layer
 - less exposure than opening the server to the public internet
 
+## Monorepo Development
+
+If you are running the repo locally in dev mode and want another device on your LAN to reach it,
+start both the web dev server and backend on all interfaces:
+
+```bash
+bun run dev -- --host 0.0.0.0
+```
+
+Then open the machine's LAN IP on the web port from the other device, for example
+`http://192.168.1.50:5733`.
+
 ## Enabling Network Access
 
 There are two ways to expose your server for remote connections: from the desktop app or from the CLI.
@@ -78,6 +90,58 @@ Typical uses:
 - revoke old pairing links or sessions
 
 Use `t3 auth --help` and the nested subcommand help pages for the full reference.
+
+## Public HTTP API
+
+For non-browser clients and automation, you can use the HTTP API with a bearer session.
+
+1. Exchange a pairing credential for a bearer session:
+
+```bash
+curl -X POST "http://HOST:PORT/api/auth/bootstrap/bearer" \
+  -H "content-type: application/json" \
+  -d '{"credential":"PAIRING_TOKEN"}'
+```
+
+The response includes `sessionToken`. Send it on later requests as:
+
+```bash
+-H "authorization: Bearer SESSION_TOKEN"
+```
+
+Core conversation endpoints:
+
+- `GET /api/v1/conversations`
+- `GET /api/v1/conversations/:threadId`
+- `POST /api/v1/conversations`
+- `POST /api/v1/conversations/:threadId/messages`
+- `POST /api/v1/conversations/:threadId/interrupt`
+- `POST /api/v1/conversations/:threadId/approval`
+- `POST /api/v1/conversations/:threadId/user-input`
+
+Example: create a conversation
+
+```bash
+curl -X POST "http://HOST:PORT/api/v1/conversations" \
+  -H "authorization: Bearer SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{
+    "projectId": "PROJECT_ID",
+    "title": "API conversation",
+    "modelSelection": { "provider": "codex", "model": "gpt-5-codex" },
+    "runtimeMode": "full-access",
+    "interactionMode": "default"
+  }'
+```
+
+Example: send a message
+
+```bash
+curl -X POST "http://HOST:PORT/api/v1/conversations/THREAD_ID/messages" \
+  -H "authorization: Bearer SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{ "text": "Inspect the failing build and fix it." }'
+```
 
 ## Security Notes
 

@@ -3,10 +3,15 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_RUNTIME_MODE,
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
 } from "@t3tools/contracts";
+import {
+  isRepoWorkflowCommand,
+  type RepoWorkflowCommandDefinition,
+} from "@t3tools/shared/repoCommands";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -45,6 +50,7 @@ import {
   startNewThreadInProjectFromContext,
   startNewThreadFromContext,
 } from "../lib/chatThreadActions";
+import { repoCommandsQueryOptions } from "../lib/projectReactQuery";
 import {
   appendBrowsePathSegment,
   canNavigateUp,
@@ -62,7 +68,15 @@ import {
 } from "../lib/projectPaths";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { getLatestThreadForProject } from "../lib/threadSort";
-import { cn, isMacPlatform, isWindowsPlatform, newCommandId, newProjectId } from "../lib/utils";
+import {
+  cn,
+  isMacPlatform,
+  isWindowsPlatform,
+  newCommandId,
+  newMessageId,
+  newProjectId,
+  newThreadId,
+} from "../lib/utils";
 import {
   selectProjectsAcrossEnvironments,
   selectSidebarThreadsAcrossEnvironments,
@@ -70,6 +84,7 @@ import {
 } from "../store";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { waitForStartedServerThread } from "./ChatView.logic";
 import {
   ADDON_ICON_CLASS,
   buildBrowseGroups,
@@ -326,6 +341,16 @@ function OpenCommandPaletteDialog() {
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
+  const currentRuntimeMode =
+    activeDraftThread?.runtimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+  const currentProject =
+    currentProjectId && currentProjectEnvironmentId
+      ? (projects.find(
+          (project) =>
+            project.id === currentProjectId &&
+            project.environmentId === currentProjectEnvironmentId,
+        ) ?? null)
+      : null;
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
@@ -338,6 +363,17 @@ function OpenCommandPaletteDialog() {
   const browseDirectoryPath = isBrowsing ? getBrowseDirectoryPath(query) : "";
   const browseFilterQuery =
     isBrowsing && !hasTrailingPathSeparator(query) ? getBrowseLeafPathSegment(query) : "";
+  const repoCommandsQuery = useQuery(
+    repoCommandsQueryOptions({
+      environmentId: currentProjectEnvironmentId,
+      cwd: currentProjectCwd,
+      enabled: currentProjectEnvironmentId !== null && currentProjectCwd !== null,
+    }),
+  );
+  const workflowRepoCommands = useMemo(
+    () => repoCommandsQuery.data?.commands.filter(isRepoWorkflowCommand) ?? [],
+    [repoCommandsQuery.data?.commands],
+  );
 
   const fetchBrowseResult = useCallback(
     async (partialPath: string): Promise<FilesystemBrowseResult | null> => {
@@ -525,6 +561,10 @@ function OpenCommandPaletteDialog() {
         addonIcon: view.addonIcon,
         groups: view.groups,
         ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
+        ...(view.inputPlaceholder ? { inputPlaceholder: view.inputPlaceholder } : {}),
+        ...(view.emptyStateMessage ? { emptyStateMessage: view.emptyStateMessage } : {}),
+        ...(view.submitActionLabel ? { submitActionLabel: view.submitActionLabel } : {}),
+        ...(view.submitQuery ? { submitQuery: view.submitQuery } : {}),
       },
     ]);
     setHighlightedItemValue(null);
@@ -536,6 +576,10 @@ function OpenCommandPaletteDialog() {
       addonIcon: item.addonIcon,
       groups: item.groups,
       ...(item.initialQuery ? { initialQuery: item.initialQuery } : {}),
+      ...(item.inputPlaceholder ? { inputPlaceholder: item.inputPlaceholder } : {}),
+      ...(item.emptyStateMessage ? { emptyStateMessage: item.emptyStateMessage } : {}),
+      ...(item.submitActionLabel ? { submitActionLabel: item.submitActionLabel } : {}),
+      ...(item.submitQuery ? { submitQuery: item.submitQuery } : {}),
     });
   }
 
@@ -671,6 +715,136 @@ function OpenCommandPaletteDialog() {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+  }
+
+  const runWorkflowRepoCommand = useCallback(
+    async (command: RepoWorkflowCommandDefinition, rawArguments: string) => {
+      if (!currentProject || !currentProjectEnvironmentId || !currentProjectCwd) {
+        throw new Error("Workflow commands require an active project.");
+      }
+
+      const api = readEnvironmentApi(currentProjectEnvironmentId);
+      if (!api) {
+        throw new Error("Environment API is unavailable.");
+      }
+
+      const trimmedArguments = rawArguments.trim();
+      const providedArguments = trimmedArguments.length === 0 ? [] : trimmedArguments.split(/\s+/);
+      if (providedArguments.length !== command.arguments.length) {
+        throw new Error(
+          `${command.name} expects ${command.arguments.length} argument${
+            command.arguments.length === 1 ? "" : "s"
+          }: ${command.arguments.join(", ")}.`,
+        );
+      }
+
+      const createdAt = new Date().toISOString();
+      const threadId = newThreadId();
+      const messageId = newMessageId();
+      const invocation =
+        providedArguments.length > 0 ? `/${command.name} ${trimmedArguments}` : `/${command.name}`;
+      const titleBase =
+        providedArguments.length > 0 ? `${command.name} ${trimmedArguments}` : command.name;
+      const title = titleBase.length <= 80 ? titleBase : `${titleBase.slice(0, 77).trimEnd()}...`;
+      const modelSelection = currentProject.defaultModelSelection ?? {
+        provider: "codex" as const,
+        model: DEFAULT_MODEL_BY_PROVIDER.codex,
+      };
+
+      await api.projects.runCommand({
+        cwd: currentProjectCwd,
+        invocation,
+        threadId,
+        messageId,
+        modelSelection,
+        runtimeMode: currentRuntimeMode,
+        interactionMode: "default",
+        createdAt,
+        createThread: {
+          projectId: currentProject.id,
+          title,
+          modelSelection,
+          runtimeMode: currentRuntimeMode,
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        },
+      });
+
+      await waitForStartedServerThread(scopeThreadRef(currentProjectEnvironmentId, threadId));
+      setOpen(false);
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(currentProjectEnvironmentId, threadId)),
+      });
+    },
+    [
+      currentProject,
+      currentProjectCwd,
+      currentProjectEnvironmentId,
+      currentRuntimeMode,
+      navigate,
+      setOpen,
+    ],
+  );
+
+  const workflowCommandItems = useMemo<Array<CommandPaletteActionItem | CommandPaletteSubmenuItem>>(
+    () =>
+      workflowRepoCommands.map((command) => {
+        const title = command.name.replace(/-/g, " ");
+        const description =
+          command.description ??
+          (command.arguments.length === 0
+            ? "Run project workflow"
+            : `Run project workflow with ${command.arguments.join(", ")}`);
+
+        if (command.arguments.length === 0) {
+          return {
+            kind: "action",
+            value: `action:workflow-command:${command.name}`,
+            searchTerms: [command.name, description, currentProject?.name ?? "", "workflow"],
+            title,
+            description,
+            icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              await runWorkflowRepoCommand(command, "");
+            },
+          } satisfies CommandPaletteActionItem;
+        }
+
+        const inputPlaceholder =
+          command.arguments.length === 1
+            ? `Enter ${command.arguments[0]}`
+            : `Enter ${command.arguments.join(" ")}`;
+        return {
+          kind: "submenu",
+          value: `action:workflow-command:${command.name}`,
+          searchTerms: [
+            command.name,
+            description,
+            ...command.arguments,
+            currentProject?.name ?? "",
+            "workflow",
+          ],
+          title,
+          description,
+          icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+          addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
+          groups: [],
+          inputPlaceholder,
+          emptyStateMessage: `Press Enter to run ${command.name}.`,
+          submitActionLabel: "Run",
+          submitQuery: async (nextQuery) => {
+            await runWorkflowRepoCommand(command, nextQuery);
+          },
+        } satisfies CommandPaletteSubmenuItem;
+      }),
+    [currentProject?.name, runWorkflowRepoCommand, workflowRepoCommands],
+  );
+
+  if (workflowCommandItems.length > 0) {
+    actionItems.push(...workflowCommandItems);
   }
 
   if (addProjectEnvironmentOptions.length > 1) {
@@ -863,10 +1037,16 @@ function OpenCommandPaletteDialog() {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
 
-  const inputPlaceholder = getCommandPaletteInputPlaceholder(paletteMode);
+  const inputPlaceholder =
+    currentView?.inputPlaceholder ?? getCommandPaletteInputPlaceholder(paletteMode);
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath = isBrowsing && !relativePathNeedsActiveProject;
+  const canSubmitCurrentViewQuery =
+    !isBrowsing &&
+    currentView?.submitQuery !== undefined &&
+    highlightedItemValue === null &&
+    query.trim().length > 0;
   const willCreateProjectPath =
     canSubmitBrowsePath &&
     !isBrowsePending &&
@@ -914,6 +1094,18 @@ function OpenCommandPaletteDialog() {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (canSubmitCurrentViewQuery && event.key === "Enter") {
+      event.preventDefault();
+      void currentView.submitQuery?.(query).catch((error: unknown) => {
+        toastManager.add({
+          type: "error",
+          title: "Unable to run command",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      });
+      return;
+    }
+
     const shouldSubmitBrowsePath =
       canSubmitBrowsePath &&
       event.key === "Enter" &&
@@ -1070,11 +1262,14 @@ function OpenCommandPaletteDialog() {
             onExecuteItem={executeItem}
             {...(relativePathNeedsActiveProject
               ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : {})}
+              : currentView?.emptyStateMessage
+                ? { emptyStateMessage: currentView.emptyStateMessage }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : {})}
           />
         </CommandPanel>
         <CommandFooter className="gap-3 max-sm:flex-col max-sm:items-start">
@@ -1091,7 +1286,9 @@ function OpenCommandPaletteDialog() {
             {!canSubmitBrowsePath || hasHighlightedBrowseItem ? (
               <KbdGroup className="items-center gap-1.5">
                 <Kbd>Enter</Kbd>
-                <span className={cn("text-muted-foreground/80")}>Select</span>
+                <span className={cn("text-muted-foreground/80")}>
+                  {currentView?.submitActionLabel ?? "Select"}
+                </span>
               </KbdGroup>
             ) : null}
             {isSubmenu ? (

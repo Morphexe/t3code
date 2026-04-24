@@ -18,7 +18,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
-import type { RepoCommandDefinition } from "@t3tools/shared/repoCommands";
+import { isRepoPromptCommand, type RepoCommandDefinition } from "@t3tools/shared/repoCommands";
 import {
   forwardRef,
   memo,
@@ -781,13 +781,15 @@ export const ChatComposer = memo(
             description: command.description ?? command.input?.hint ?? "Run provider command",
           }),
         );
-        const repoSlashCommandItems = props.repoCommands.map((command) => ({
-          id: `repo-command:${command.name}`,
-          type: "repo-command" as const,
-          command,
-          label: `/${command.name}`,
-          description: describeRepoCommand(command),
-        }));
+        const repoSlashCommandItems = props.repoCommands
+          .filter(isRepoPromptCommand)
+          .map((command) => ({
+            id: `repo-command:${command.name}`,
+            type: "repo-command" as const,
+            command,
+            label: `/${command.name}`,
+            description: describeRepoCommand(command),
+          }));
         const query = composerTrigger.query.trim().toLowerCase();
         const slashCommandItems = [
           ...builtInSlashCommandItems,
@@ -816,7 +818,13 @@ export const ChatComposer = memo(
         }));
       }
       return [];
-    }, [composerTrigger, props.repoCommands, selectedProvider, selectedProviderStatus, workspaceEntries]);
+    }, [
+      composerTrigger,
+      props.repoCommands,
+      selectedProvider,
+      selectedProviderStatus,
+      workspaceEntries,
+    ]);
 
     const composerMenuOpen = Boolean(composerTrigger);
     const composerMenuSearchKey = composerTrigger

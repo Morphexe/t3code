@@ -4,6 +4,24 @@
       "name": "test-command",
       "arguments": [],
       "prompt": "You should tell a joke to the user."
+    },
+    {
+      "kind": "workflow",
+      "name": "create-ticket",
+      "arguments": ["ticket"],
+      "description": "Create a worktree for $ticket and start a ticket-focused turn.",
+      "steps": [
+        {
+          "type": "createWorktree",
+          "baseBranch": "main",
+          "branch": "$ticket",
+          "runSetupScript": true
+        },
+        {
+          "type": "startTurn",
+          "prompt": "You are working in a dedicated worktree for ticket $ticket. First inspect the repo, then implement the requested change, and verify it before finishing."
+        }
+      ]
     }
   ]
 }

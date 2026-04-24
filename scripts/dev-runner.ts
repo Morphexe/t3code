@@ -15,10 +15,49 @@ const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::1", "::"] as const;
+const IPV6_LOOPBACK_HOST = "::1";
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".t3"),
 );
+
+function normalizeHost(host: string): string {
+  return host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1");
+}
+
+function isLoopbackHost(host: string | undefined): boolean {
+  if (!host) {
+    return true;
+  }
+
+  const normalizedHost = normalizeHost(host);
+  return LOOPBACK_HOSTNAMES.has(normalizedHost) || normalizedHost.startsWith("127.");
+}
+
+function isWildcardHost(host: string | undefined): boolean {
+  if (!host) {
+    return false;
+  }
+
+  const normalizedHost = normalizeHost(host);
+  return normalizedHost === "0.0.0.0" || normalizedHost === "::";
+}
+
+function resolveDevProxyHost(host: string | undefined): string {
+  if (!host || isLoopbackHost(host)) {
+    return "localhost";
+  }
+
+  if (isWildcardHost(host)) {
+    return normalizeHost(host) === "::" ? IPV6_LOOPBACK_HOST : "127.0.0.1";
+  }
+
+  return host.trim();
+}
 
 const MODE_ARGS = {
   dev: [
@@ -148,6 +187,8 @@ export function createDevRunnerEnv({
     const webPort = BASE_WEB_PORT + webOffset;
     const resolvedBaseDir = yield* resolveBaseDir(t3Home);
     const isDesktopMode = mode === "dev:desktop";
+    const isRemoteReachableHost = !isDesktopMode && host !== undefined && !isLoopbackHost(host);
+    const devProxyTarget = `http://${resolveDevProxyHost(host)}:${serverPort}`;
 
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,
@@ -160,8 +201,14 @@ export function createDevRunnerEnv({
 
     if (!isDesktopMode) {
       output.T3CODE_PORT = String(serverPort);
-      output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
-      output.VITE_WS_URL = `ws://localhost:${serverPort}`;
+      output.T3CODE_DEV_PROXY_TARGET = devProxyTarget;
+      if (!isRemoteReachableHost) {
+        output.VITE_HTTP_URL = `http://${resolveDevProxyHost(host)}:${serverPort}`;
+        output.VITE_WS_URL = `ws://${resolveDevProxyHost(host)}:${serverPort}`;
+      } else {
+        delete output.VITE_HTTP_URL;
+        delete output.VITE_WS_URL;
+      }
     } else {
       output.T3CODE_PORT = String(serverPort);
       output.VITE_HTTP_URL = `http://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
@@ -169,10 +216,12 @@ export function createDevRunnerEnv({
       delete output.T3CODE_MODE;
       delete output.T3CODE_NO_BROWSER;
       delete output.T3CODE_HOST;
+      delete output.T3CODE_DEV_PROXY_TARGET;
     }
 
     if (!isDesktopMode && host !== undefined) {
       output.T3CODE_HOST = host;
+      output.HOST = host;
     }
 
     if (!isDesktopMode && noBrowser !== undefined) {

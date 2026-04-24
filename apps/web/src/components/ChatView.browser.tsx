@@ -5930,13 +5930,35 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("runs a workflow repo command through projects.runCommand", async () => {
+  it("runs a workflow repo command from the command palette", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
       snapshot: createSnapshotForTargetUser({
         targetMessageId: "msg-user-workflow-command-target" as MessageId,
         targetText: "workflow command thread",
       }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "commandPalette.toggle",
+              shortcut: {
+                key: "k",
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: false,
+                altKey: false,
+                modKey: true,
+              },
+              whenAst: {
+                type: "not",
+                node: { type: "identifier", name: "terminalFocus" },
+              },
+            },
+          ],
+        };
+      },
       resolveRpc: (body) => {
         if (body._tag === WS_METHODS.projectsReadFile) {
           return {
@@ -5969,12 +5991,19 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      useComposerDraftStore.getState().setPrompt(THREAD_REF, "/create-ticket ABC-123");
-      await waitForLayout();
-
-      const sendButton = await waitForSendButton();
-      expect(sendButton.disabled).toBe(false);
-      sendButton.click();
+      await waitForCommandPaletteShortcutLabel();
+      await openCommandPaletteFromTrigger();
+      await expect.element(page.getByText("create ticket", { exact: true })).toBeInTheDocument();
+      await page.getByText("create ticket", { exact: true }).click();
+      await page.getByPlaceholder("Enter ticket").fill("ABC-123");
+      const input = await waitForCommandPaletteInput("Enter ticket");
+      await dispatchInputKey(input, {
+        key: "Enter",
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+      });
 
       await vi.waitFor(
         () => {
@@ -5993,7 +6022,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
             _tag: WS_METHODS.projectsRunCommand,
             invocation: "/create-ticket ABC-123",
             cwd: "/repo/project",
-            threadId: THREAD_ID,
           });
         },
         { timeout: 8_000, interval: 16 },

@@ -9,6 +9,7 @@ const port = Number(process.env.PORT ?? 5733);
 const host = process.env.HOST?.trim() || "localhost";
 const configuredHttpUrl = process.env.VITE_HTTP_URL?.trim();
 const configuredWsUrl = process.env.VITE_WS_URL?.trim();
+const configuredDevProxyTarget = process.env.T3CODE_DEV_PROXY_TARGET?.trim();
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
 const buildSourcemap =
@@ -19,6 +20,10 @@ const buildSourcemap =
       : true;
 
 function resolveDevProxyTarget(wsUrl: string | undefined): string | undefined {
+  if (configuredDevProxyTarget) {
+    return configuredDevProxyTarget;
+  }
+
   if (!wsUrl) {
     return undefined;
   }
@@ -85,6 +90,11 @@ export default defineConfig({
             "/attachments": {
               target: devProxyTarget,
               changeOrigin: true,
+            },
+            "/ws": {
+              target: devProxyTarget,
+              changeOrigin: true,
+              ws: true,
             },
           },
         }
