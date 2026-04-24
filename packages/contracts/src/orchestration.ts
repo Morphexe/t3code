@@ -141,6 +141,8 @@ export const ChatAttachment = Schema.Union([ChatImageAttachment]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);
 export type UploadChatAttachment = typeof UploadChatAttachment.Type;
+export const ClientChatAttachment = UploadChatAttachment;
+export type ClientChatAttachment = typeof ClientChatAttachment.Type;
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -413,6 +415,87 @@ export const OrchestrationThreadDetailSnapshot = Schema.Struct({
   thread: OrchestrationThread,
 });
 export type OrchestrationThreadDetailSnapshot = typeof OrchestrationThreadDetailSnapshot.Type;
+
+export const OrchestrationConversationListResult = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  conversations: Schema.Array(OrchestrationThreadShell),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationConversationListResult = typeof OrchestrationConversationListResult.Type;
+
+export const OrchestrationConversationStatusResult = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  conversation: OrchestrationThreadShell,
+});
+export type OrchestrationConversationStatusResult =
+  typeof OrchestrationConversationStatusResult.Type;
+
+export const OrchestrationConversationCreateInput = Schema.Struct({
+  projectId: ProjectId,
+  title: TrimmedNonEmptyString.pipe(Schema.withDecodingDefault(Effect.succeed("New conversation"))),
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
+  ),
+  branch: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+});
+export type OrchestrationConversationCreateInput = typeof OrchestrationConversationCreateInput.Type;
+
+export const OrchestrationConversationCommandResult = Schema.Struct({
+  sequence: NonNegativeInt,
+  threadId: ThreadId,
+  commandId: CommandId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationConversationCommandResult =
+  typeof OrchestrationConversationCommandResult.Type;
+
+export const OrchestrationConversationSendMessageInput = Schema.Struct({
+  text: Schema.String,
+  attachments: Schema.Array(ClientChatAttachment).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  modelSelection: Schema.optionalKey(ModelSelection),
+  titleSeed: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type OrchestrationConversationSendMessageInput =
+  typeof OrchestrationConversationSendMessageInput.Type;
+
+export const OrchestrationConversationSendMessageResult = Schema.Struct({
+  sequence: NonNegativeInt,
+  threadId: ThreadId,
+  messageId: MessageId,
+  commandId: CommandId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationConversationSendMessageResult =
+  typeof OrchestrationConversationSendMessageResult.Type;
+
+export const OrchestrationConversationInterruptInput = Schema.Struct({
+  turnId: Schema.optionalKey(TurnId),
+});
+export type OrchestrationConversationInterruptInput =
+  typeof OrchestrationConversationInterruptInput.Type;
+
+export const OrchestrationConversationApprovalResponseInput = Schema.Struct({
+  requestId: ApprovalRequestId,
+  decision: ProviderApprovalDecision,
+});
+export type OrchestrationConversationApprovalResponseInput =
+  typeof OrchestrationConversationApprovalResponseInput.Type;
+
+export const OrchestrationConversationUserInputResponseInput = Schema.Struct({
+  requestId: ApprovalRequestId,
+  answers: ProviderUserInputAnswers,
+});
+export type OrchestrationConversationUserInputResponseInput =
+  typeof OrchestrationConversationUserInputResponseInput.Type;
 
 export const ProjectCreateCommand = Schema.Struct({
   type: Schema.Literal("project.create"),

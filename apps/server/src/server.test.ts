@@ -931,6 +931,224 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("lists conversations over the public HTTP API for bearer sessions", () =>
+    Effect.gen(function* () {
+      const updatedAt = new Date().toISOString();
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 12,
+                projects: [],
+                threads: [
+                  makeDefaultOrchestrationThreadShell({
+                    title: "API Thread",
+                    updatedAt,
+                  }),
+                ],
+                updatedAt,
+              }),
+          },
+        },
+      });
+
+      const bearerToken = yield* getAuthenticatedBearerSessionToken();
+      const url = yield* getHttpServerUrl("/api/v1/conversations");
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+          },
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly snapshotSequence: number;
+        readonly conversations: ReadonlyArray<OrchestrationThreadShell>;
+        readonly updatedAt: string;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.snapshotSequence, 12);
+      assert.equal(body.updatedAt, updatedAt);
+      assert.equal(body.conversations.length, 1);
+      assert.equal(body.conversations[0]?.id, defaultThreadId);
+      assert.equal(body.conversations[0]?.title, "API Thread");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("reads conversation status over the public HTTP API", () =>
+    Effect.gen(function* () {
+      const updatedAt = new Date().toISOString();
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 7,
+                projects: [],
+                threads: [
+                  makeDefaultOrchestrationThreadShell({
+                    hasPendingApprovals: true,
+                    updatedAt,
+                  }),
+                ],
+                updatedAt,
+              }),
+          },
+        },
+      });
+
+      const bearerToken = yield* getAuthenticatedBearerSessionToken();
+      const url = yield* getHttpServerUrl(`/api/v1/conversations/${defaultThreadId}`);
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+          },
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly snapshotSequence: number;
+        readonly conversation: OrchestrationThreadShell;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.snapshotSequence, 7);
+      assert.equal(body.conversation.id, defaultThreadId);
+      assert.equal(body.conversation.hasPendingApprovals, true);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("creates conversations over the public HTTP API", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: 21 };
+              }),
+          },
+        },
+      });
+
+      const bearerToken = yield* getAuthenticatedBearerSessionToken();
+      const url = yield* getHttpServerUrl("/api/v1/conversations");
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: defaultProjectId,
+            title: "New API Conversation",
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          }),
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly sequence: number;
+        readonly threadId: ThreadId;
+        readonly commandId: CommandId;
+        readonly createdAt: string;
+      };
+
+      assert.equal(response.status, 201);
+      assert.equal(body.sequence, 21);
+      assert.equal(dispatchedCommands.length, 1);
+      assert.deepStrictEqual(dispatchedCommands[0], {
+        type: "thread.create",
+        commandId: body.commandId,
+        threadId: body.threadId,
+        projectId: defaultProjectId,
+        title: "New API Conversation",
+        modelSelection: defaultModelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt: body.createdAt,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("sends messages over the public HTTP API using the conversation runtime settings", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: 34 };
+              }),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () =>
+              Effect.succeed(
+                Option.some(
+                  makeDefaultOrchestrationThreadShell({
+                    runtimeMode: "approval-required",
+                    interactionMode: "plan",
+                  }),
+                ),
+              ),
+          },
+        },
+      });
+
+      const bearerToken = yield* getAuthenticatedBearerSessionToken();
+      const url = yield* getHttpServerUrl(`/api/v1/conversations/${defaultThreadId}/messages`);
+      const response = yield* Effect.promise(() =>
+        fetch(url, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            text: "Ship it",
+          }),
+        }),
+      );
+      const body = (yield* Effect.promise(() => response.json())) as {
+        readonly sequence: number;
+        readonly threadId: ThreadId;
+        readonly messageId: MessageId;
+        readonly commandId: CommandId;
+        readonly createdAt: string;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.sequence, 34);
+      assert.equal(dispatchedCommands.length, 1);
+      assert.deepStrictEqual(dispatchedCommands[0], {
+        type: "thread.turn.start",
+        commandId: body.commandId,
+        threadId: defaultThreadId,
+        message: {
+          messageId: body.messageId,
+          role: "user",
+          text: "Ship it",
+          attachments: [],
+        },
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+        createdAt: body.createdAt,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("issues short-lived websocket tokens for authenticated bearer sessions", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
