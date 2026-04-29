@@ -2,11 +2,12 @@
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
 import {
-  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_RUNTIME_MODE,
+  DEFAULT_MODEL,
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   isRepoWorkflowCommand,
@@ -747,8 +748,8 @@ function OpenCommandPaletteDialog() {
         providedArguments.length > 0 ? `${command.name} ${trimmedArguments}` : command.name;
       const title = titleBase.length <= 80 ? titleBase : `${titleBase.slice(0, 77).trimEnd()}...`;
       const modelSelection = currentProject.defaultModelSelection ?? {
-        provider: "codex" as const,
-        model: DEFAULT_MODEL_BY_PROVIDER.codex,
+        instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_MODEL,
       };
 
       await api.projects.runCommand({
@@ -960,8 +961,8 @@ function OpenCommandPaletteDialog() {
           workspaceRoot: cwd,
           createWorkspaceRootIfMissing: true,
           defaultModelSelection: {
-            provider: "codex",
-            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
           },
           createdAt: new Date().toISOString(),
         });
