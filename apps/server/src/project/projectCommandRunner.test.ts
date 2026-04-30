@@ -1,4 +1,10 @@
-import { MessageId, type OrchestrationReadModel, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  MessageId,
+  type OrchestrationReadModel,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
@@ -10,6 +16,10 @@ import type { ProjectSetupScriptRunnerShape } from "./Services/ProjectSetupScrip
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
+const MODEL_SELECTION = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "gpt-5-codex",
+} as const;
 
 function makeDependencies(overrides?: {
   readonly commandsFileContents?: string;
@@ -172,20 +182,14 @@ describe("runProjectWorkflowCommand", () => {
         invocation: "/create-ticket ABC-123",
         threadId: THREAD_ID,
         messageId: MESSAGE_ID,
-        modelSelection: {
-          provider: "codex",
-          model: "gpt-5-codex",
-        },
+        modelSelection: MODEL_SELECTION,
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt: "2026-04-20T12:00:00.000Z",
         createThread: {
           projectId: PROJECT_ID,
           title: "ABC-123",
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
-          },
+          modelSelection: MODEL_SELECTION,
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
@@ -257,20 +261,14 @@ describe("runProjectWorkflowCommand", () => {
           invocation: "/create-ticket ABC-123",
           threadId: THREAD_ID,
           messageId: MESSAGE_ID,
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
-          },
+          modelSelection: MODEL_SELECTION,
           runtimeMode: "full-access",
           interactionMode: "default",
           createdAt: "2026-04-20T12:00:00.000Z",
           createThread: {
             projectId: PROJECT_ID,
             title: "ABC-123",
-            modelSelection: {
-              provider: "codex",
-              model: "gpt-5-codex",
-            },
+            modelSelection: MODEL_SELECTION,
             runtimeMode: "full-access",
             interactionMode: "default",
             branch: null,
@@ -336,10 +334,7 @@ describe("runProjectWorkflowCommand", () => {
             id: THREAD_ID,
             projectId: PROJECT_ID,
             title: "ABC-123",
-            modelSelection: {
-              provider: "codex",
-              model: "gpt-5-codex",
-            },
+            modelSelection: MODEL_SELECTION,
             runtimeMode: "full-access",
             interactionMode: "default",
             branch: "ABC-123",
@@ -366,10 +361,7 @@ describe("runProjectWorkflowCommand", () => {
         invocation: "/continue-ticket ABC-123",
         threadId: THREAD_ID,
         messageId: MESSAGE_ID,
-        modelSelection: {
-          provider: "codex",
-          model: "gpt-5-codex",
-        },
+        modelSelection: MODEL_SELECTION,
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt: "2026-04-20T12:00:00.000Z",
