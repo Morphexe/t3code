@@ -222,6 +222,7 @@ function createMockEnvironmentApi(input: {
     filesystem: {
       browse: input.browse,
     },
+    vcs: {} as EnvironmentApi["vcs"],
     git: {} as EnvironmentApi["git"],
     orchestration: {
       dispatchCommand: input.dispatchCommand,
@@ -967,13 +968,13 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
   if (tag === WS_METHODS.serverGetConfig) {
     return fixture.serverConfig;
   }
-  if (tag === WS_METHODS.gitListBranches) {
+  if (tag === WS_METHODS.vcsListRefs) {
     return {
       isRepo: true,
-      hasOriginRemote: true,
+      hasPrimaryRemote: true,
       nextCursor: null,
       totalCount: 1,
-      branches: [
+      refs: [
         {
           name: "main",
           current: true,
@@ -2309,16 +2310,16 @@ describe("ChatView timeline estimator parity (full app)", () => {
       branchButton.click();
 
       const branchInput = await waitForElement(
-        () => document.querySelector<HTMLInputElement>('input[placeholder="Search branches..."]'),
-        "Unable to find branch search input.",
+        () => document.querySelector<HTMLInputElement>('input[placeholder="Search refs..."]'),
+        "Unable to find ref search input.",
       );
       branchInput.focus();
-      await page.getByPlaceholder("Search branches...").fill("1359");
+      await page.getByPlaceholder("Search refs...").fill("1359");
 
       const checkoutItem = await waitForElement(
         () =>
           Array.from(document.querySelectorAll("span")).find(
-            (element) => element.textContent?.trim() === "Checkout Pull Request",
+            (element) => element.textContent?.trim() === "Checkout pull request",
           ) as HTMLSpanElement | null,
         "Unable to find checkout pull request option.",
       );
@@ -2447,7 +2448,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
         { timeout: 8_000, interval: 16 },
       );
 
-      expect(wsRequests.some((request) => request._tag === WS_METHODS.gitCreateWorktree)).toBe(
+      expect(wsRequests.some((request) => request._tag === WS_METHODS.vcsCreateWorktree)).toBe(
         false,
       );
       expect(
@@ -2594,13 +2595,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
         ),
       },
       resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
+        if (body._tag === WS_METHODS.vcsListRefs) {
           return {
             isRepo: true,
-            hasOriginRemote: true,
+            hasPrimaryRemote: true,
             nextCursor: null,
             totalCount: 1,
-            branches: [
+            refs: [
               {
                 name: "main",
                 current: true,
@@ -2687,13 +2688,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
         ),
       },
       resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
+        if (body._tag === WS_METHODS.vcsListRefs) {
           return {
             isRepo: true,
-            hasOriginRemote: true,
+            hasPrimaryRemote: true,
             nextCursor: null,
             totalCount: 2,
-            branches: [
+            refs: [
               {
                 name: "main",
                 current: true,
@@ -2783,13 +2784,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
       viewport: DEFAULT_VIEWPORT,
       snapshot: snapshotWithTwoThreads,
       resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
+        if (body._tag === WS_METHODS.vcsListRefs) {
           return {
             isRepo: true,
-            hasOriginRemote: true,
+            hasPrimaryRemote: true,
             nextCursor: null,
             totalCount: 2,
-            branches: [
+            refs: [
               {
                 name: "main",
                 current: true,
@@ -3043,13 +3044,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
       snapshot: createDraftOnlySnapshot(),
       initialPath: `/draft/${activeDraftId}`,
       resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
+        if (body._tag === WS_METHODS.vcsListRefs) {
           return {
             isRepo: true,
-            hasOriginRemote: true,
+            hasPrimaryRemote: true,
             nextCursor: null,
             totalCount: 2,
-            branches: [
+            refs: [
               {
                 name: "main",
                 current: true,
@@ -3168,13 +3169,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
       snapshot: createDraftOnlySnapshot(),
       initialPath: `/draft/${draftId}`,
       resolveRpc: (body) => {
-        if (body._tag === WS_METHODS.gitListBranches) {
+        if (body._tag === WS_METHODS.vcsListRefs) {
           return {
             isRepo: true,
-            hasOriginRemote: true,
+            hasPrimaryRemote: true,
             nextCursor: null,
             totalCount: branches.length,
-            branches,
+            refs: branches,
           };
         }
         return undefined;
@@ -3192,8 +3193,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       branchButton.click();
 
       await waitForElement(
-        () => document.querySelector<HTMLInputElement>('input[placeholder="Search branches..."]'),
-        "Unable to find branch search input.",
+        () => document.querySelector<HTMLInputElement>('input[placeholder="Search refs..."]'),
+        "Unable to find ref search input.",
       );
 
       const popup = await waitForElement(
