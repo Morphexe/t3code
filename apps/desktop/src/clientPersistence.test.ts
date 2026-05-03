@@ -54,6 +54,7 @@ const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
+  diffIgnoreWhitespace: true,
   diffWordWrap: true,
   favorites: [],
   providerModelPreferences: {},
