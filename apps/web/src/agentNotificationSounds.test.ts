@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderDriverKind, ThreadId, TurnId } from "@t3tools/contracts";
 
 import { deriveAgentNotificationTransition } from "./agentNotificationSounds";
 import type { SidebarThreadSummary } from "./types";
@@ -16,7 +16,7 @@ function makeThread(
     session:
       input.session ??
       ({
-        provider: "codex",
+        provider: ProviderDriverKind.make("codex"),
         status: "ready",
         orchestrationStatus: "ready",
         createdAt: "2026-04-19T10:00:00.000Z",
@@ -78,7 +78,7 @@ describe("deriveAgentNotificationTransition", () => {
       makeThread({
         id: threadId,
         session: {
-          provider: "codex",
+          provider: ProviderDriverKind.make("codex"),
           status: "running",
           orchestrationStatus: "running",
           activeTurnId: TurnId.make("turn-1"),
@@ -100,7 +100,7 @@ describe("deriveAgentNotificationTransition", () => {
       makeThread({
         id: threadId,
         session: {
-          provider: "codex",
+          provider: ProviderDriverKind.make("codex"),
           status: "ready",
           orchestrationStatus: "ready",
           createdAt: "2026-04-19T10:00:00.000Z",

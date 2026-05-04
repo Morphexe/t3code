@@ -19,14 +19,14 @@ import {
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { Cause, Effect, Schema } from "effect";
 
-import type { GitCoreShape } from "../git/Services/GitCore.ts";
+import type { GitWorkflowServiceShape } from "../git/GitWorkflowService.ts";
 import type { OrchestrationEngineShape } from "../orchestration/Services/OrchestrationEngine.ts";
 import type { ProjectSetupScriptRunnerShape } from "./Services/ProjectSetupScriptRunner.ts";
 import type { TerminalManagerShape } from "../terminal/Services/Manager.ts";
 import type { WorkspaceFileSystemShape } from "../workspace/Services/WorkspaceFileSystem.ts";
 
 interface ProjectWorkflowCommandRunnerDependencies {
-  readonly git: Pick<GitCoreShape, "createWorktree">;
+  readonly git: Pick<GitWorkflowServiceShape, "createWorktree">;
   readonly orchestrationEngine: Pick<OrchestrationEngineShape, "dispatch" | "getReadModel">;
   readonly projectSetupScriptRunner: Pick<ProjectSetupScriptRunnerShape, "runForThread">;
   readonly terminalManager: Pick<TerminalManagerShape, "open" | "write">;
@@ -274,8 +274,8 @@ function runWorkflowStep(input: {
         const result = yield* input.deps.git
           .createWorktree({
             cwd: input.input.cwd,
-            branch: step.baseBranch,
-            newBranch: step.branch,
+            refName: step.baseBranch,
+            newRefName: step.branch,
             path: null,
           })
           .pipe(
@@ -292,7 +292,7 @@ function runWorkflowStep(input: {
             type: "thread.meta.update",
             commandId: makeServerCommandId("project-command-thread-meta"),
             threadId: input.input.threadId,
-            branch: result.worktree.branch,
+            branch: result.worktree.refName,
             worktreePath: result.worktree.path,
           })
           .pipe(

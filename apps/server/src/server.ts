@@ -79,15 +79,6 @@ import {
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import {
-  conversationsApprovalRouteLayer,
-  conversationsCreateRouteLayer,
-  conversationsInterruptRouteLayer,
-  conversationsListRouteLayer,
-  conversationsMessageRouteLayer,
-  conversationsStatusRouteLayer,
-  conversationsUserInputRouteLayer,
-} from "./orchestration/conversationsHttp.ts";
-import {
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
 } from "./orchestration/http.ts";
@@ -301,13 +292,6 @@ export const makeRoutesLayer = Layer.mergeAll(
   authSessionRouteLayer,
   authWebSocketTokenRouteLayer,
   attachmentsRouteLayer,
-  conversationsApprovalRouteLayer,
-  conversationsCreateRouteLayer,
-  conversationsInterruptRouteLayer,
-  conversationsListRouteLayer,
-  conversationsMessageRouteLayer,
-  conversationsStatusRouteLayer,
-  conversationsUserInputRouteLayer,
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
   otlpTracesProxyRouteLayer,
