@@ -9,7 +9,7 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { runProjectWorkflowCommand } from "./projectCommandRunner.ts";
-import type { GitCoreShape } from "../git/Services/GitCore.ts";
+import type { GitWorkflowServiceShape } from "../git/GitWorkflowService.ts";
 import type { OrchestrationEngineShape } from "../orchestration/Services/OrchestrationEngine.ts";
 import type { ProjectSetupScriptRunnerShape } from "./Services/ProjectSetupScriptRunner.ts";
 
@@ -24,7 +24,7 @@ const MODEL_SELECTION = {
 function makeDependencies(overrides?: {
   readonly commandsFileContents?: string;
   readonly readModel?: OrchestrationReadModel;
-  readonly createWorktree?: GitCoreShape["createWorktree"];
+  readonly createWorktree?: GitWorkflowServiceShape["createWorktree"];
   readonly dispatch?: OrchestrationEngineShape["dispatch"];
   readonly runSetupScript?: ProjectSetupScriptRunnerShape["runForThread"];
 }) {
@@ -100,7 +100,7 @@ function makeDependencies(overrides?: {
     Effect.succeed({
       worktree: {
         path: "/tmp/worktrees/ABC-123",
-        branch: "ABC-123",
+        refName: "ABC-123",
       },
     }),
   );
@@ -209,8 +209,8 @@ describe("runProjectWorkflowCommand", () => {
     });
     expect(spies.createWorktree).toHaveBeenCalledWith({
       cwd: "/repo",
-      branch: "main",
-      newBranch: "ABC-123",
+      refName: "main",
+      newRefName: "ABC-123",
       path: null,
     });
     expect(spies.runSetupScript).toHaveBeenCalledWith({
