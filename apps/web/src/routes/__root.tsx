@@ -18,6 +18,7 @@ import {
 } from "../agentNotificationSounds";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -51,19 +52,41 @@ import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
+  listSavedEnvironmentRecords,
+  waitForSavedEnvironmentRegistryHydration,
   startEnvironmentConnectionService,
+  useSavedEnvironmentRegistryStore,
 } from "../environments/runtime";
 import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,
+  getPrimaryKnownEnvironment,
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
+import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
+    if (location.pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href))) {
+      return {
+        authGateState: {
+          status: "hosted-pairing",
+        } as const,
+      };
+    }
+
+    if (isHostedStaticApp(new URL(window.location.href))) {
+      await waitForSavedEnvironmentRegistryHydration();
+      return {
+        authGateState: {
+          status: "hosted-static",
+        } as const,
+      };
+    }
+
     const [, authGateState] = await Promise.all([
       ensurePrimaryEnvironmentReady(),
       resolveInitialServerAuthGateState(),
@@ -82,6 +105,7 @@ export const Route = createRootRouteWithContext<{
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
+  const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -96,29 +120,64 @@ function RootRouteView() {
     return <Outlet />;
   }
 
-  if (authGateState.status !== "authenticated") {
+  if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
     return <Outlet />;
   }
+
+  const appShell = (
+    <CommandPalette>
+      <AppSidebarLayout>
+        <Outlet />
+      </AppSidebarLayout>
+    </CommandPalette>
+  );
+
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <AuthenticatedTracingBootstrap />
-        <ServerStateBootstrap />
+        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+        {primaryEnvironmentAuthenticated ? <ServerStateBootstrap /> : null}
         <EnvironmentConnectionManagerBootstrap />
-        <AgentNotificationSoundCoordinator />
-        <EventRouter />
-        <WebSocketConnectionCoordinator />
-        <SlowRpcAckToastCoordinator />
-        <WebSocketConnectionSurface>
-          <CommandPalette>
-            <AppSidebarLayout>
-              <Outlet />
-            </AppSidebarLayout>
-          </CommandPalette>
-        </WebSocketConnectionSurface>
+        {primaryEnvironmentAuthenticated ? <AgentNotificationSoundCoordinator /> : null}
+        <SshPasswordPromptDialog />
+        <HostedStaticEnvironmentBootstrap />
+        {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
+        {primaryEnvironmentAuthenticated ? <WebSocketConnectionCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? <SlowRpcAckToastCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? (
+          <WebSocketConnectionSurface>{appShell}</WebSocketConnectionSurface>
+        ) : (
+          appShell
+        )}
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function HostedStaticEnvironmentBootstrap() {
+  const savedEnvironmentCount = useSavedEnvironmentRegistryStore(
+    (state) => Object.keys(state.byId).length,
+  );
+
+  useEffect(() => {
+    if (getPrimaryKnownEnvironment()) {
+      return;
+    }
+
+    const currentActiveEnvironmentId = useStore.getState().activeEnvironmentId;
+    if (currentActiveEnvironmentId) {
+      return;
+    }
+
+    const firstSavedEnvironment = listSavedEnvironmentRecords()[0];
+    if (!firstSavedEnvironment) {
+      return;
+    }
+
+    useStore.getState().setActiveEnvironmentId(firstSavedEnvironment.environmentId);
+  }, [savedEnvironmentCount]);
+
+  return null;
 }
 
 function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
@@ -193,7 +252,13 @@ function errorDetails(error: unknown): string {
 }
 
 function ServerStateBootstrap() {
-  useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+  useEffect(() => {
+    if (!getPrimaryKnownEnvironment()) {
+      return;
+    }
+
+    return startServerStateSync(getPrimaryEnvironmentConnection().client.server);
+  }, []);
 
   return null;
 }

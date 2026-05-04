@@ -157,11 +157,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       restart: (input) => transport.request((client) => client[WS_METHODS.terminalRestart](input)),
       close: (input) => transport.request((client) => client[WS_METHODS.terminalClose](input)),
       onEvent: (listener, options) =>
-        transport.subscribe(
-          (client) => client[WS_METHODS.subscribeTerminalEvents]({}),
-          listener,
-          options,
-        ),
+        transport.subscribe((client) => client[WS_METHODS.subscribeTerminalEvents]({}), listener, {
+          ...options,
+          tag: WS_METHODS.subscribeTerminalEvents,
+        }),
     },
     projects: {
       readFile: (input) =>
@@ -200,7 +199,7 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
             current = applyGitStatusStreamEvent(current, event);
             listener(current);
           },
-          options,
+          { ...options, tag: WS_METHODS.subscribeVcsStatus },
         );
       },
       listRefs: (input) => transport.request((client) => client[WS_METHODS.vcsListRefs](input)),
@@ -249,23 +248,20 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       discoverSourceControl: () =>
         transport.request((client) => client[WS_METHODS.serverDiscoverSourceControl]({})),
       subscribeConfig: (listener, options) =>
-        transport.subscribe(
-          (client) => client[WS_METHODS.subscribeServerConfig]({}),
-          listener,
-          options,
-        ),
+        transport.subscribe((client) => client[WS_METHODS.subscribeServerConfig]({}), listener, {
+          ...options,
+          tag: WS_METHODS.subscribeServerConfig,
+        }),
       subscribeLifecycle: (listener, options) =>
-        transport.subscribe(
-          (client) => client[WS_METHODS.subscribeServerLifecycle]({}),
-          listener,
-          options,
-        ),
+        transport.subscribe((client) => client[WS_METHODS.subscribeServerLifecycle]({}), listener, {
+          ...options,
+          tag: WS_METHODS.subscribeServerLifecycle,
+        }),
       subscribeAuthAccess: (listener, options) =>
-        transport.subscribe(
-          (client) => client[WS_METHODS.subscribeAuthAccess]({}),
-          listener,
-          options,
-        ),
+        transport.subscribe((client) => client[WS_METHODS.subscribeAuthAccess]({}), listener, {
+          ...options,
+          tag: WS_METHODS.subscribeAuthAccess,
+        }),
     },
     orchestration: {
       dispatchCommand: (input) =>
@@ -278,13 +274,13 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.subscribe(
           (client) => client[ORCHESTRATION_WS_METHODS.subscribeShell]({}),
           listener,
-          options,
+          { ...options, tag: ORCHESTRATION_WS_METHODS.subscribeShell },
         ),
       subscribeThread: (input, listener, options) =>
         transport.subscribe(
           (client) => client[ORCHESTRATION_WS_METHODS.subscribeThread](input),
           listener,
-          options,
+          { ...options, tag: ORCHESTRATION_WS_METHODS.subscribeThread },
         ),
     },
   };

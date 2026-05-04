@@ -57,8 +57,15 @@ import type {
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
 import type { EnvironmentId } from "./baseSchemas.ts";
+import type {
+  AuthBearerBootstrapResult,
+  AuthSessionState,
+  AuthWebSocketTokenResult,
+} from "./auth.ts";
+import type { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
-import { ServerSettings, type ClientSettings, type ServerSettingsPatch } from "./settings.ts";
+import type { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -139,6 +146,36 @@ export interface DesktopEnvironmentBootstrap {
   bootstrapToken?: string;
 }
 
+export interface DesktopSshEnvironmentTarget {
+  alias: string;
+  hostname: string;
+  username: string | null;
+  port: number | null;
+}
+
+export type DesktopSshHostSource = "ssh-config" | "known-hosts";
+
+export interface DesktopDiscoveredSshHost extends DesktopSshEnvironmentTarget {
+  source: DesktopSshHostSource;
+}
+
+export interface DesktopSshEnvironmentBootstrap {
+  target: DesktopSshEnvironmentTarget;
+  httpBaseUrl: string;
+  wsBaseUrl: string;
+  pairingToken: string | null;
+  remotePort?: number;
+  remoteServerKind?: "external" | "managed";
+}
+
+export interface DesktopSshPasswordPromptRequest {
+  requestId: string;
+  destination: string;
+  username: string | null;
+  prompt: string;
+  expiresAt: string;
+}
+
 export interface PersistedSavedEnvironmentRecord {
   environmentId: EnvironmentId;
   label: string;
@@ -146,6 +183,7 @@ export interface PersistedSavedEnvironmentRecord {
   httpBaseUrl: string;
   createdAt: string;
   lastConnectedAt: string | null;
+  desktopSsh?: DesktopSshEnvironmentTarget;
 }
 
 export type DesktopServerExposureMode = "local-only" | "network-accessible";
@@ -154,6 +192,8 @@ export interface DesktopServerExposureState {
   mode: DesktopServerExposureMode;
   endpointUrl: string | null;
   advertisedHost: string | null;
+  tailscaleServeEnabled: boolean;
+  tailscaleServePort: number;
 }
 
 export interface PickFolderOptions {
@@ -172,8 +212,31 @@ export interface DesktopBridge {
   getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
   setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
   removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+  discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
+  ensureSshEnvironment: (
+    target: DesktopSshEnvironmentTarget,
+    options?: { issuePairingToken?: boolean },
+  ) => Promise<DesktopSshEnvironmentBootstrap>;
+  disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
+  fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
+  bootstrapSshBearerSession: (
+    httpBaseUrl: string,
+    credential: string,
+  ) => Promise<AuthBearerBootstrapResult>;
+  fetchSshSessionState: (httpBaseUrl: string, bearerToken: string) => Promise<AuthSessionState>;
+  issueSshWebSocketToken: (
+    httpBaseUrl: string,
+    bearerToken: string,
+  ) => Promise<AuthWebSocketTokenResult>;
+  onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
+  resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
+  setTailscaleServeEnabled: (input: {
+    readonly enabled: boolean;
+    readonly port?: number;
+  }) => Promise<DesktopServerExposureState>;
+  getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
