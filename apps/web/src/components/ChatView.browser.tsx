@@ -222,6 +222,7 @@ function createMockEnvironmentApi(input: {
     filesystem: {
       browse: input.browse,
     },
+    sourceControl: {} as EnvironmentApi["sourceControl"],
     vcs: {} as EnvironmentApi["vcs"],
     git: {} as EnvironmentApi["git"],
     orchestration: {
@@ -4494,8 +4495,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      await waitForServerConfigToApply();
-      await waitForCommandPaletteShortcutLabel();
+      await Promise.all([waitForServerConfigToApply(), waitForCommandPaletteShortcutLabel()]);
       const palette = page.getByTestId("command-palette");
       await openCommandPaletteFromTrigger();
 
@@ -4547,8 +4547,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      await waitForServerConfigToApply();
-      await waitForCommandPaletteShortcutLabel();
+      await Promise.all([waitForServerConfigToApply(), waitForCommandPaletteShortcutLabel()]);
       const palette = page.getByTestId("command-palette");
       await openCommandPaletteFromTrigger();
 
@@ -4621,13 +4620,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      await waitForServerConfigToApply();
-      await waitForCommandPaletteShortcutLabel();
+      await Promise.all([waitForServerConfigToApply(), waitForCommandPaletteShortcutLabel()]);
       const palette = page.getByTestId("command-palette");
       await openCommandPaletteFromTrigger();
 
       await expect.element(palette).toBeInTheDocument();
       await palette.getByText("Add project", { exact: true }).click();
+      await palette.getByText("Local folder", { exact: true }).click();
 
       const browseInput = await waitForCommandPaletteInput(ADD_PROJECT_SUBMENU_PLACEHOLDER);
       await page.getByPlaceholder(ADD_PROJECT_SUBMENU_PLACEHOLDER).fill("~/Development/");
@@ -4668,6 +4667,126 @@ describe("ChatView timeline estimator parity (full app)", () => {
         mounted.router,
         (path) => UUID_ROUTE_RE.test(path),
         "Route should have changed to a new draft thread after adding a project with Enter.",
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows clone destination controls after resolving an add project repository", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-command-palette-add-project-remote" as MessageId,
+        targetText: "command palette add project remote",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "commandPalette.toggle",
+              shortcut: {
+                key: "k",
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: false,
+                altKey: false,
+                modKey: true,
+              },
+              whenAst: {
+                type: "not",
+                node: { type: "identifier", name: "terminalFocus" },
+              },
+            },
+          ],
+        };
+      },
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.filesystemBrowse) {
+          return {
+            parentPath: "~/",
+            entries: [{ name: "Development", fullPath: "~/Development" }],
+          };
+        }
+
+        if (body._tag === WS_METHODS.sourceControlLookupRepository) {
+          return {
+            provider: "github",
+            nameWithOwner: "t3-oss/t3-env",
+            url: "https://github.com/t3-oss/t3-env",
+            sshUrl: "git@github.com:t3-oss/t3-env.git",
+          };
+        }
+
+        if (body._tag === WS_METHODS.sourceControlCloneRepository) {
+          return {
+            cwd: body.destinationPath,
+            remoteUrl: body.remoteUrl,
+            repository: null,
+          };
+        }
+
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          return {
+            sequence: fixture.snapshot.snapshotSequence + 1,
+          };
+        }
+
+        return undefined;
+      },
+    });
+
+    try {
+      await Promise.all([waitForServerConfigToApply(), waitForCommandPaletteShortcutLabel()]);
+      const palette = page.getByTestId("command-palette");
+      await openCommandPaletteFromTrigger();
+
+      await expect.element(palette).toBeInTheDocument();
+      await palette.getByText("Add project", { exact: true }).click();
+      await palette.getByText("GitHub repository", { exact: true }).click();
+
+      const repositoryInput = await waitForCommandPaletteInput(
+        "Enter GitHub repository (owner/repo)",
+      );
+      await page.getByPlaceholder("Enter GitHub repository (owner/repo)").fill("t3-oss/t3-env");
+      await dispatchInputKey(repositoryInput, { key: "Enter" });
+
+      await vi.waitFor(
+        () => {
+          const clonePathInput = document.querySelector<HTMLInputElement>(
+            'input[placeholder="Enter path (e.g. ~/projects/my-app)"]',
+          );
+          expect(clonePathInput?.value).toBe("~/");
+          expect(document.body.textContent).toContain("Repository");
+          expect(document.body.textContent).toContain("t3-oss/t3-env");
+          expect(document.body.textContent).toContain("https://github.com/t3-oss/t3-env");
+          expect(document.body.textContent).toContain("Select where to clone");
+          expect(document.body.textContent).toContain("Development");
+          expect(document.body.textContent).toContain("Clone");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await page
+        .getByPlaceholder("Enter path (e.g. ~/projects/my-app)")
+        .fill("~/Development/t3env");
+      const clonePathInput = await waitForCommandPaletteInput(
+        "Enter path (e.g. ~/projects/my-app)",
+      );
+      await dispatchInputKey(clonePathInput, { key: "Enter" });
+
+      await vi.waitFor(
+        () => {
+          const cloneRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.sourceControlCloneRepository,
+          ) as { destinationPath?: string; remoteUrl?: string } | undefined;
+          expect(cloneRequest).toMatchObject({
+            remoteUrl: "git@github.com:t3-oss/t3-env.git",
+            destinationPath: "~/Development/t3env",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
       );
     } finally {
       await mounted.cleanup();
@@ -5026,6 +5145,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       await expect.element(palette).toBeInTheDocument();
       await palette.getByText("Add project", { exact: true }).click();
+      await palette.getByText("Local folder", { exact: true }).click();
       await expect.element(palette.getByText("Environments", { exact: true })).toBeInTheDocument();
       await expect
         .element(palette.getByText("This device", { exact: true }).first())
@@ -5241,6 +5361,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       await expect.element(palette).toBeInTheDocument();
       await palette.getByText("Add project", { exact: true }).click();
+      await palette.getByText("Local folder", { exact: true }).click();
 
       const browseInput = await waitForCommandPaletteInput(ADD_PROJECT_SUBMENU_PLACEHOLDER);
       await page.getByPlaceholder(ADD_PROJECT_SUBMENU_PLACEHOLDER).fill("~/Development/");

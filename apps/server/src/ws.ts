@@ -57,6 +57,7 @@ import { runProjectWorkflowCommand } from "./project/projectCommandRunner.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import * as SourceControlDiscoveryLayer from "./sourceControl/SourceControlDiscovery.ts";
+import { SourceControlRepositoryService } from "./sourceControl/SourceControlRepositoryService.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import {
   BootstrapCredentialService,
@@ -156,6 +157,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
       const sourceControlDiscovery = yield* SourceControlDiscoveryLayer.SourceControlDiscovery;
+      const sourceControlRepositories = yield* SourceControlRepositoryService;
       const bootstrapCredentials = yield* BootstrapCredentialService;
       const sessions = yield* SessionCredentialService;
       const serverCommandId = (tag: string) =>
@@ -803,6 +805,32 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             sourceControlDiscovery.discover,
             {
               "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.sourceControlLookupRepository]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlLookupRepository,
+            sourceControlRepositories.lookupRepository(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
+        [WS_METHODS.sourceControlCloneRepository]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlCloneRepository,
+            sourceControlRepositories.cloneRepository(input),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
+        [WS_METHODS.sourceControlPublishRepository]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlPublishRepository,
+            sourceControlRepositories
+              .publishRepository(input)
+              .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            {
+              "rpc.aggregate": "source-control",
             },
           ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
