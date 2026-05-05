@@ -955,7 +955,13 @@ export const ChatComposer = memo(
         }));
       }
       return [];
-    }, [composerTrigger, props.repoCommands, selectedProvider, selectedProviderStatus, workspaceEntries]);
+    }, [
+      composerTrigger,
+      props.repoCommands,
+      selectedProvider,
+      selectedProviderStatus,
+      workspaceEntries,
+    ]);
 
     const composerMenuOpen = Boolean(composerTrigger);
     const composerMenuSearchKey = composerTrigger

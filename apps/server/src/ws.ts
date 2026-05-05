@@ -171,8 +171,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
       const runProjectCommand = runProjectWorkflowCommand({
-        git,
+        git: gitWorkflow,
         orchestrationEngine,
+        projectionSnapshotQuery,
         projectSetupScriptRunner,
         terminalManager,
         workspaceFileSystem,

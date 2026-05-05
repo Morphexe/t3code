@@ -2829,10 +2829,8 @@ export default function ChatView(props: ChatViewProps) {
 
           const title = truncate(messageTextForSend);
           const threadCreateModelSelection = createModelSelection(
-            ctxSelectedProvider,
-            ctxSelectedModel ||
-              activeProject.defaultModelSelection?.model ||
-              DEFAULT_MODEL_BY_PROVIDER.codex,
+            ctxSelectedModelSelection.instanceId,
+            ctxSelectedModel || activeProject.defaultModelSelection?.model || DEFAULT_MODEL,
             ctxSelectedModelSelection.options,
           );
 

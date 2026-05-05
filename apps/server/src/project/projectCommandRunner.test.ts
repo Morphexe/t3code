@@ -1,20 +1,30 @@
-import { MessageId, type OrchestrationReadModel, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  MessageId,
+  type OrchestrationReadModel,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { runProjectWorkflowCommand } from "./projectCommandRunner.ts";
-import type { GitCoreShape } from "../git/Services/GitCore.ts";
+import type { GitWorkflowServiceShape } from "../git/GitWorkflowService.ts";
 import type { OrchestrationEngineShape } from "../orchestration/Services/OrchestrationEngine.ts";
 import type { ProjectSetupScriptRunnerShape } from "./Services/ProjectSetupScriptRunner.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
+const MODEL_SELECTION = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "gpt-5-codex",
+} as const;
 
 function makeDependencies(overrides?: {
   readonly commandsFileContents?: string;
   readonly readModel?: OrchestrationReadModel;
-  readonly createWorktree?: GitCoreShape["createWorktree"];
+  readonly createWorktree?: GitWorkflowServiceShape["createWorktree"];
   readonly dispatch?: OrchestrationEngineShape["dispatch"];
   readonly runSetupScript?: ProjectSetupScriptRunnerShape["runForThread"];
 }) {
@@ -90,7 +100,7 @@ function makeDependencies(overrides?: {
     Effect.succeed({
       worktree: {
         path: "/tmp/worktrees/ABC-123",
-        branch: "ABC-123",
+        refName: "ABC-123",
       },
     }),
   );
@@ -134,8 +144,10 @@ function makeDependencies(overrides?: {
       createWorktree: overrides?.createWorktree ?? createWorktree,
     },
     orchestrationEngine: {
-      getReadModel: () => Effect.succeed(readModel),
       dispatch: overrides?.dispatch ?? dispatch,
+    },
+    projectionSnapshotQuery: {
+      getSnapshot: () => Effect.succeed(readModel),
     },
     projectSetupScriptRunner: {
       runForThread: overrides?.runSetupScript ?? runSetupScript,
@@ -172,20 +184,14 @@ describe("runProjectWorkflowCommand", () => {
         invocation: "/create-ticket ABC-123",
         threadId: THREAD_ID,
         messageId: MESSAGE_ID,
-        modelSelection: {
-          provider: "codex",
-          model: "gpt-5-codex",
-        },
+        modelSelection: MODEL_SELECTION,
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt: "2026-04-20T12:00:00.000Z",
         createThread: {
           projectId: PROJECT_ID,
           title: "ABC-123",
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
-          },
+          modelSelection: MODEL_SELECTION,
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
@@ -205,8 +211,8 @@ describe("runProjectWorkflowCommand", () => {
     });
     expect(spies.createWorktree).toHaveBeenCalledWith({
       cwd: "/repo",
-      branch: "main",
-      newBranch: "ABC-123",
+      refName: "main",
+      newRefName: "ABC-123",
       path: null,
     });
     expect(spies.runSetupScript).toHaveBeenCalledWith({
@@ -257,20 +263,14 @@ describe("runProjectWorkflowCommand", () => {
           invocation: "/create-ticket ABC-123",
           threadId: THREAD_ID,
           messageId: MESSAGE_ID,
-          modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
-          },
+          modelSelection: MODEL_SELECTION,
           runtimeMode: "full-access",
           interactionMode: "default",
           createdAt: "2026-04-20T12:00:00.000Z",
           createThread: {
             projectId: PROJECT_ID,
             title: "ABC-123",
-            modelSelection: {
-              provider: "codex",
-              model: "gpt-5-codex",
-            },
+            modelSelection: MODEL_SELECTION,
             runtimeMode: "full-access",
             interactionMode: "default",
             branch: null,
@@ -336,10 +336,7 @@ describe("runProjectWorkflowCommand", () => {
             id: THREAD_ID,
             projectId: PROJECT_ID,
             title: "ABC-123",
-            modelSelection: {
-              provider: "codex",
-              model: "gpt-5-codex",
-            },
+            modelSelection: MODEL_SELECTION,
             runtimeMode: "full-access",
             interactionMode: "default",
             branch: "ABC-123",
@@ -366,10 +363,7 @@ describe("runProjectWorkflowCommand", () => {
         invocation: "/continue-ticket ABC-123",
         threadId: THREAD_ID,
         messageId: MESSAGE_ID,
-        modelSelection: {
-          provider: "codex",
-          model: "gpt-5-codex",
-        },
+        modelSelection: MODEL_SELECTION,
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt: "2026-04-20T12:00:00.000Z",

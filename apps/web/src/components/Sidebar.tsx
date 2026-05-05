@@ -4,6 +4,8 @@ import {
   ChevronRightIcon,
   CloudIcon,
   FolderPlusIcon,
+  GitPullRequestIcon,
+  PlusIcon,
   SearchIcon,
   SettingsIcon,
   SquarePenIcon,
