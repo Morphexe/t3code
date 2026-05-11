@@ -14,7 +14,7 @@ import {
 } from "@t3tools/shared/repoCommands";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { selectThreadByRef, useStore } from "../store";
 import {
   filterTerminalContextsWithText,
