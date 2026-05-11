@@ -76,7 +76,7 @@ import {
   useStore,
 } from "../store";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
-import { useUiStateStore } from "../uiStateStore";
+import { flushUiStatePersistence, useUiStateStore } from "../uiStateStore";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -3112,6 +3112,7 @@ export default function Sidebar() {
       );
       const overMemberKeys = overProject.memberProjects.map((member) => member.physicalProjectKey);
       reorderProjects(activeMemberKeys, overMemberKeys);
+      flushUiStatePersistence();
     },
     [sidebarProjectSortOrder, reorderProjects, sidebarProjects],
   );

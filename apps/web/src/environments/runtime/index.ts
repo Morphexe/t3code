@@ -24,6 +24,7 @@ export {
   reconnectSavedEnvironment,
   removeSavedEnvironment,
   requireEnvironmentConnection,
+  resumePausedEnvironmentUpdates,
   resetEnvironmentServiceForTests,
   startEnvironmentConnectionService,
   subscribeEnvironmentConnections,
