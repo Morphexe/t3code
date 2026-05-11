@@ -17,7 +17,9 @@ import {
   type ResolvedRepoWorkflowCommandStep,
 } from "@t3tools/shared/repoCommands";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { Cause, Effect, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { GitWorkflowServiceShape } from "../git/GitWorkflowService.ts";
 import type { ProjectionSnapshotQueryShape } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -39,8 +41,10 @@ function makeServerCommandId(tag: string) {
   return CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 }
 
+const isProjectRunCommandError = Schema.is(ProjectRunCommandError);
+
 function toProjectRunCommandError(cause: unknown, fallbackMessage: string): ProjectRunCommandError {
-  if (Schema.is(ProjectRunCommandError)(cause)) {
+  if (isProjectRunCommandError(cause)) {
     return cause;
   }
 

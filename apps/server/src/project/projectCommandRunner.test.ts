@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { runProjectWorkflowCommand } from "./projectCommandRunner.ts";
@@ -124,7 +124,7 @@ function makeDependencies(overrides?: {
       history: "",
       exitCode: null,
       exitSignal: null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: "2026-01-01T00:00:00.000Z",
       cols: 80,
       rows: 24,
       hasRunningSubprocess: false,

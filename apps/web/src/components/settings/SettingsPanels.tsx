@@ -540,7 +540,6 @@ export function GeneralSettingsPanel() {
     [updateSettings],
   );
 
-
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
