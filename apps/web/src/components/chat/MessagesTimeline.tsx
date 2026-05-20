@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -1104,6 +1105,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const [isExpanded, setIsExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -1118,9 +1120,29 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+  const expandedDetail = workEntryExpandedDetail(workEntry, workspaceRoot);
+  const canExpand = expandedDetail !== null;
+  const toggleExpanded = useCallback(() => {
+    if (canExpand) setIsExpanded((value) => !value);
+  }, [canExpand]);
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!canExpand || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      setIsExpanded((value) => !value);
+    },
+    [canExpand],
+  );
 
   return (
-    <div className="rounded-lg px-1 py-1">
+    <div
+      className={cn("rounded-lg px-1 py-1", canExpand ? "cursor-pointer" : "")}
+      role={canExpand ? "button" : undefined}
+      tabIndex={canExpand ? 0 : undefined}
+      aria-expanded={canExpand ? isExpanded : undefined}
+      onClick={toggleExpanded}
+      onKeyDown={handleKeyDown}
+    >
       <div className="flex items-center gap-2 transition-[opacity,translate] duration-200">
         <span
           className={cn("flex size-5 shrink-0 items-center justify-center", iconConfig.className)}
@@ -1184,6 +1206,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
                     {heading}
                   </span>
                   {preview && <span className="text-muted-foreground/55"> - {preview}</span>}
+                  {canExpand && (
+                    <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/45">
+                      {isExpanded ? "collapse" : "expand"}
+                    </span>
+                  )}
                 </p>
               </TooltipTrigger>
               <TooltipPopup className="max-w-[min(720px,calc(100vw-2rem))]">
@@ -1195,6 +1222,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           )}
         </div>
       </div>
+      {isExpanded && expandedDetail ? (
+        <pre className="mt-1.5 ml-7 max-h-72 overflow-auto rounded-lg border border-border/55 bg-background/75 px-2.5 py-2 font-mono text-[11px] leading-4 whitespace-pre-wrap text-foreground/80 wrap-break-word">
+          {expandedDetail}
+        </pre>
+      ) : null}
       {hasChangedFiles && !previewIsChangedFiles && (
         <div className="mt-1 flex flex-wrap gap-1 pl-6">
           {workEntry.changedFiles?.slice(0, 4).map((filePath) => {
@@ -1219,3 +1251,22 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     </div>
   );
 });
+
+function workEntryExpandedDetail(
+  workEntry: TimelineWorkEntry,
+  workspaceRoot: string | undefined,
+): string | null {
+  const sections: string[] = [];
+  const rawCommand = workEntryRawCommand(workEntry);
+  if (rawCommand) sections.push(rawCommand);
+  if (workEntry.detail && workEntry.detail !== rawCommand) sections.push(workEntry.detail);
+  if (workEntry.changedFiles?.length) {
+    sections.push(
+      `Changed files:\n${workEntry.changedFiles
+        .map((filePath) => `- ${formatWorkspaceRelativePath(filePath, workspaceRoot)}`)
+        .join("\n")}`,
+    );
+  }
+  const detail = sections.join("\n\n").trim();
+  return detail.length > 0 ? detail : null;
+}

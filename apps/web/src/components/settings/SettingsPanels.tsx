@@ -33,6 +33,7 @@ import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hos
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { readEnvironmentApi } from "../../environmentApi";
 import {
   setDesktopUpdateStateQueryData,
   useDesktopUpdateState,
@@ -47,8 +48,16 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { useShallow } from "zustand/react/shallow";
-import { selectProjectsAcrossEnvironments, useStore } from "../../store";
-import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
+import {
+  selectProjectsAcrossEnvironments,
+  selectSidebarThreadsAcrossEnvironments,
+  useStore,
+} from "../../store";
+import {
+  refreshArchivedThreadsForEnvironment,
+  useArchivedThreadSnapshots,
+} from "../../lib/archivedThreadsState";
+import { newCommandId } from "../../lib/utils";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -110,6 +119,34 @@ const NOTIFICATION_SOUND_LABELS = {
   glass: "Glass",
   pop: "Pop",
 } as const satisfies Record<NotificationSoundPreset, string>;
+
+const OLD_CONVERSATION_RETENTION_DAYS = 7;
+const OLD_CONVERSATION_RETENTION_MS = OLD_CONVERSATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+type OldConversationCleanupCandidate = {
+  readonly threadRef: ScopedThreadRef;
+  readonly title: string;
+};
+
+function getThreadLastActivityAt(thread: {
+  readonly latestUserMessageAt?: string | null;
+  readonly updatedAt?: string | null | undefined;
+  readonly createdAt: string;
+}) {
+  return thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt;
+}
+
+function isOlderThanRetentionWindow(
+  thread: {
+    readonly latestUserMessageAt?: string | null;
+    readonly updatedAt?: string | null | undefined;
+    readonly createdAt: string;
+  },
+  cutoffMs: number,
+) {
+  const lastActivityMs = Date.parse(getThreadLastActivityAt(thread));
+  return Number.isFinite(lastActivityMs) && lastActivityMs < cutoffMs;
+}
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -501,6 +538,14 @@ export function GeneralSettingsPanel() {
   const { updateSettings } = useUpdateSettings();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
+  const [isCleaningOldConversations, setIsCleaningOldConversations] = useState(false);
+  const activeThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  const environmentIds = useMemo(
+    () => [...new Set(projects.map((project) => project.environmentId))],
+    [projects],
+  );
+  const archivedThreadSnapshots = useArchivedThreadSnapshots(environmentIds);
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -531,6 +576,34 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
+  const oldConversationCandidates = useMemo(() => {
+    const cutoffMs = Date.now() - OLD_CONVERSATION_RETENTION_MS;
+    const candidatesByKey = new Map<string, OldConversationCleanupCandidate>();
+
+    for (const thread of activeThreads) {
+      if (thread.session?.status === "running") continue;
+      if (!isOlderThanRetentionWindow(thread, cutoffMs)) continue;
+      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+      candidatesByKey.set(`${threadRef.environmentId}:${threadRef.threadId}`, {
+        threadRef,
+        title: thread.title,
+      });
+    }
+
+    for (const { environmentId, snapshot } of archivedThreadSnapshots.snapshots) {
+      for (const thread of snapshot.threads) {
+        if (thread.session?.status === "running") continue;
+        if (!isOlderThanRetentionWindow(thread, cutoffMs)) continue;
+        const threadRef = scopeThreadRef(environmentId, thread.id);
+        candidatesByKey.set(`${threadRef.environmentId}:${threadRef.threadId}`, {
+          threadRef,
+          title: thread.title,
+        });
+      }
+    }
+
+    return [...candidatesByKey.values()];
+  }, [activeThreads, archivedThreadSnapshots.snapshots]);
 
   const updateNotificationSound = useCallback(
     (key: "agentRequiresInputSound" | "agentFinishedSound", value: NotificationSoundPreset) => {
@@ -539,6 +612,66 @@ export function GeneralSettingsPanel() {
     },
     [updateSettings],
   );
+
+  const handleCleanOldConversations = useCallback(async () => {
+    if (oldConversationCandidates.length === 0 || isCleaningOldConversations) return;
+
+    const confirmed = window.confirm(
+      [
+        `Delete ${oldConversationCandidates.length} conversation${
+          oldConversationCandidates.length === 1 ? "" : "s"
+        } older than ${OLD_CONVERSATION_RETENTION_DAYS} days?`,
+        "",
+        "This permanently clears their conversation history.",
+      ].join("\n"),
+    );
+    if (!confirmed) return;
+
+    setIsCleaningOldConversations(true);
+    let deletedCount = 0;
+    try {
+      for (const candidate of oldConversationCandidates) {
+        const api = readEnvironmentApi(candidate.threadRef.environmentId);
+        if (!api) continue;
+
+        try {
+          await api.terminal.close({
+            threadId: candidate.threadRef.threadId,
+            deleteHistory: true,
+          });
+        } catch {
+          // The thread may be archived or may not have an open terminal.
+        }
+
+        await api.orchestration.dispatchCommand({
+          type: "thread.delete",
+          commandId: newCommandId(),
+          threadId: candidate.threadRef.threadId,
+        });
+        refreshArchivedThreadsForEnvironment(candidate.threadRef.environmentId);
+        deletedCount += 1;
+      }
+
+      archivedThreadSnapshots.refresh();
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: "Old conversations cleaned",
+          description: `Deleted ${deletedCount} conversation${deletedCount === 1 ? "" : "s"}.`,
+        }),
+      );
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to clean old conversations",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    } finally {
+      setIsCleaningOldConversations(false);
+    }
+  }, [archivedThreadSnapshots, isCleaningOldConversations, oldConversationCandidates]);
 
   return (
     <SettingsPageContainer>
@@ -839,6 +972,35 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Confirm thread deletion"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Clean old conversations"
+          description={`Delete conversations whose last activity is older than ${OLD_CONVERSATION_RETENTION_DAYS} days. Running conversations are skipped.`}
+          control={
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={
+                isCleaningOldConversations ||
+                archivedThreadSnapshots.isLoading ||
+                oldConversationCandidates.length === 0
+              }
+              onClick={() => void handleCleanOldConversations()}
+            >
+              {isCleaningOldConversations ? (
+                <>
+                  <LoaderIcon className="size-3.5 animate-spin" />
+                  Cleaning
+                </>
+              ) : oldConversationCandidates.length === 0 ? (
+                "Nothing to clean"
+              ) : (
+                `Clean ${oldConversationCandidates.length}`
+              )}
+            </Button>
           }
         />
 

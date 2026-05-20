@@ -19,6 +19,7 @@ import { ChildProcess } from "effect/unstable/process";
 
 const BASE_SERVER_PORT = 13773;
 const BASE_WEB_PORT = 5733;
+const BASE_ORCHESTRATOR_API_PORT = 3001;
 const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
@@ -36,6 +37,16 @@ const MODE_ARGS = {
     "--filter=@t3tools/contracts",
     "--filter=@t3tools/web",
     "--filter=t3",
+    "--parallel",
+  ],
+  "dev:all": [
+    "run",
+    "dev",
+    "--ui=tui",
+    "--filter=@t3tools/contracts",
+    "--filter=@t3tools/web",
+    "--filter=t3",
+    "--filter=@t3tools/orchestrator",
     "--parallel",
   ],
   "dev:server": ["run", "dev", "--filter=t3"],
@@ -201,9 +212,21 @@ export function createDevRunnerEnv({
       delete output.T3CODE_LOG_WS_EVENTS;
     }
 
-    if (mode === "dev") {
+    if (mode === "dev" || mode === "dev:all") {
       output.T3CODE_MODE = "web";
       delete output.T3CODE_DESKTOP_WS_URL;
+    }
+
+    if (mode === "dev:all") {
+      const orchestratorApiPort = BASE_ORCHESTRATOR_API_PORT + serverOffset;
+      output.API_PORT = String(orchestratorApiPort);
+      output.VITE_ORCHESTRATOR_API_URL = `http://localhost:${orchestratorApiPort}`;
+      output.T3CODE_ORCHESTRATOR_EMBEDDED = "1";
+      output.T3CODE_ORCHESTRATION_PROJECT_ROOT =
+        baseEnv.T3CODE_ORCHESTRATION_PROJECT_ROOT?.trim() ||
+        baseEnv.T3CODE_PROJECT_ROOT?.trim() ||
+        process.cwd();
+      output.T3CODE_BASE_URL = output.VITE_HTTP_URL;
     }
 
     if (mode === "dev:server" || mode === "dev:web") {
@@ -227,6 +250,14 @@ function portPairForOffset(offset: number): {
   return {
     serverPort: BASE_SERVER_PORT + offset,
     webPort: BASE_WEB_PORT + offset,
+  };
+}
+
+function orchestratorPortsForOffset(offset: number): {
+  readonly apiPort: number;
+} {
+  return {
+    apiPort: BASE_ORCHESTRATOR_API_PORT + offset,
   };
 }
 
@@ -258,6 +289,7 @@ interface FindFirstAvailableOffsetInput<R = NetService.NetService> {
   readonly startOffset: number;
   readonly requireServerPort: boolean;
   readonly requireWebPort: boolean;
+  readonly requireOrchestratorPorts?: boolean;
   readonly checkPortAvailability?: PortAvailabilityCheck<R>;
 }
 
@@ -265,6 +297,7 @@ export function findFirstAvailableOffset<R = NetService.NetService>({
   startOffset,
   requireServerPort,
   requireWebPort,
+  requireOrchestratorPorts = false,
   checkPortAvailability,
 }: FindFirstAvailableOffsetInput<R>): Effect.Effect<number, DevRunnerError, R> {
   return Effect.gen(function* () {
@@ -273,13 +306,19 @@ export function findFirstAvailableOffset<R = NetService.NetService>({
 
     for (let candidate = startOffset; ; candidate += 1) {
       const { serverPort, webPort } = portPairForOffset(candidate);
+      const { apiPort: orchestratorApiPort } = orchestratorPortsForOffset(candidate);
       const serverPortOutOfRange = serverPort > MAX_PORT;
       const webPortOutOfRange = webPort > MAX_PORT;
+      const orchestratorApiPortOutOfRange = orchestratorApiPort > MAX_PORT;
 
       if (
         (requireServerPort && serverPortOutOfRange) ||
         (requireWebPort && webPortOutOfRange) ||
-        (!requireServerPort && !requireWebPort && (serverPortOutOfRange || webPortOutOfRange))
+        (requireOrchestratorPorts && orchestratorApiPortOutOfRange) ||
+        (!requireServerPort &&
+          !requireWebPort &&
+          !requireOrchestratorPorts &&
+          (serverPortOutOfRange || webPortOutOfRange))
       ) {
         break;
       }
@@ -290,6 +329,9 @@ export function findFirstAvailableOffset<R = NetService.NetService>({
       }
       if (requireWebPort) {
         checks.push(checkPort(webPort));
+      }
+      if (requireOrchestratorPorts) {
+        checks.push(checkPort(orchestratorApiPort));
       }
 
       if (checks.length === 0) {
@@ -330,6 +372,7 @@ export function resolveModePortOffsets<R = NetService.NetService>({
   return Effect.gen(function* () {
     const checkPort = (checkPortAvailability ??
       defaultCheckPortAvailability) as PortAvailabilityCheck<R>;
+    const requireOrchestratorPorts = mode === "dev:all";
 
     if (mode === "dev:web") {
       if (hasExplicitDevUrl) {
@@ -363,6 +406,7 @@ export function resolveModePortOffsets<R = NetService.NetService>({
       startOffset,
       requireServerPort: !hasExplicitServerPort,
       requireWebPort: !hasExplicitDevUrl,
+      requireOrchestratorPorts,
       checkPortAvailability: checkPort,
     });
 
@@ -431,7 +475,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
         : "";
 
     yield* Effect.logInfo(
-      `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} baseDir=${String(env.T3CODE_HOME)}`,
+      `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} orchestratorApiPort=${String(env.API_PORT ?? "")} baseDir=${String(env.T3CODE_HOME)}`,
     );
 
     if (input.dryRun) {

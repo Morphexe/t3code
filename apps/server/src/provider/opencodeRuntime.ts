@@ -35,6 +35,7 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJ
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
+const DEFAULT_OPENCODE_COMMAND_TIMEOUT_MS = 5_000;
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 5_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 export interface OpenCodeServerProcess {
@@ -302,6 +303,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         code: exitCode,
       } satisfies OpenCodeCommandResult;
     }).pipe(
+      Effect.timeout(`${DEFAULT_OPENCODE_COMMAND_TIMEOUT_MS} millis`),
       Effect.scoped,
       Effect.mapError((cause) =>
         ensureRuntimeError(

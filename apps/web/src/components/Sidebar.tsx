@@ -11,6 +11,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import {
   ChangeRequestStatusIcon,
@@ -995,6 +996,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     (settings) => settings.sidebarThreadPreviewCount,
   );
   const router = useRouter();
+  const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
   const toggleProject = useUiStateStore((state) => state.toggleProject);
@@ -1282,12 +1284,31 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (useThreadSelectionStore.getState().hasSelection()) {
         clearSelection();
       }
+      const primaryProject = project.memberProjects[0];
+      if (primaryProject) {
+        if (isMobile) {
+          setOpenMobile(false);
+        }
+        void navigate({
+          to: "/orchestration",
+          search: {
+            projectId: String(primaryProject.id),
+            title: primaryProject.name,
+            workspaceRoot: primaryProject.cwd,
+          },
+        });
+        return;
+      }
       toggleProject(project.projectKey);
     },
     [
       clearSelection,
       dragInProgressRef,
+      isMobile,
+      navigate,
+      project.memberProjects,
       project.projectKey,
+      setOpenMobile,
       suppressProjectClickAfterDragRef,
       suppressProjectClickForContextMenuRef,
       toggleProject,
@@ -2757,6 +2778,22 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 </Kbd>
               ) : null}
             </CommandDialogTrigger>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              render={
+                <Link
+                  to="/orchestration"
+                  activeProps={{ "data-active": "true" }}
+                  className="data-[active=true]:bg-accent data-[active=true]:text-foreground"
+                />
+              }
+              size="sm"
+              className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+            >
+              <WorkflowIcon className="size-3.5" />
+              <span className="flex-1 truncate text-left text-xs">Orchestration</span>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
