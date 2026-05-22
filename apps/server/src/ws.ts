@@ -25,7 +25,6 @@ import {
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
-  ProjectReadFileError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
@@ -961,56 +960,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     cause,
                   }),
               ),
-            ),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.projectsReadFile]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectsReadFile,
-            workspaceFileSystem.readFile(input).pipe(
-              Effect.mapError((cause) => {
-                if (Schema.is(WorkspacePathOutsideRootError)(cause)) {
-                  return new ProjectReadFileError({
-                    message: "Workspace file path must stay within the project root.",
-                    reason: "outside-root",
-                    cause,
-                  });
-                }
-                const nestedCause =
-                  cause.cause && typeof cause.cause === "object" ? cause.cause : null;
-                const detail = cause.detail.toLowerCase();
-                const nestedCode =
-                  nestedCause && "code" in nestedCause
-                    ? String(nestedCause.code ?? "").toLowerCase()
-                    : "";
-                const nestedMessage =
-                  nestedCause && "message" in nestedCause
-                    ? String(nestedCause.message ?? "").toLowerCase()
-                    : "";
-                const nestedReasonTag =
-                  nestedCause &&
-                  "reason" in nestedCause &&
-                  nestedCause.reason &&
-                  typeof nestedCause.reason === "object" &&
-                  "_tag" in nestedCause.reason
-                    ? String(nestedCause.reason._tag ?? "").toLowerCase()
-                    : "";
-                return new ProjectReadFileError({
-                  message: cause.detail || `Failed to read workspace file '${input.relativePath}'.`,
-                  reason:
-                    detail.includes("no such file") ||
-                    detail.includes("enoent") ||
-                    detail.includes("notfound") ||
-                    detail.includes("does not exist") ||
-                    nestedCode === "enoent" ||
-                    nestedReasonTag === "notfound" ||
-                    nestedMessage.includes("no such file") ||
-                    nestedMessage.includes("does not exist")
-                      ? "not-found"
-                      : "unknown",
-                  cause,
-                });
-              }),
             ),
             { "rpc.aggregate": "workspace" },
           ),

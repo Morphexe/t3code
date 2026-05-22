@@ -17,33 +17,6 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries;
 
-  const readFile: WorkspaceFileSystemShape["readFile"] = Effect.fn("WorkspaceFileSystem.readFile")(
-    function* (input) {
-      const target = yield* workspacePaths.resolveRelativePathWithinRoot({
-        workspaceRoot: input.cwd,
-        relativePath: input.relativePath,
-      });
-
-      const contents = yield* fileSystem.readFileString(target.absolutePath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new WorkspaceFileSystemError({
-              cwd: input.cwd,
-              relativePath: input.relativePath,
-              operation: "workspaceFileSystem.readFile",
-              detail: cause.message,
-              cause,
-            }),
-        ),
-      );
-
-      return {
-        relativePath: target.relativePath,
-        contents,
-      };
-    },
-  );
-
   const writeFile: WorkspaceFileSystemShape["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
   )(function* (input) {
@@ -79,7 +52,7 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
     yield* workspaceEntries.invalidate(input.cwd);
     return { relativePath: target.relativePath };
   });
-  return { readFile, writeFile } satisfies WorkspaceFileSystemShape;
+  return { writeFile } satisfies WorkspaceFileSystemShape;
 });
 
 export const WorkspaceFileSystemLive = Layer.effect(WorkspaceFileSystem, makeWorkspaceFileSystem);

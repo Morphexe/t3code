@@ -78,10 +78,6 @@ function createTestClient() {
       },
     },
     projects: {
-      readFile: vi.fn(async () => ({
-        relativePath: ".t3commands.json",
-        contents: '{"commands":[]}\n',
-      })),
       searchEntries: vi.fn(async () => []),
       writeFile: vi.fn(async () => undefined),
     },
