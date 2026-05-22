@@ -19,7 +19,6 @@ import {
   CommandList,
   CommandSeparator,
 } from "../ui/command";
-import { Badge } from "../ui/badge";
 import { VscodeEntryIcon } from "./VscodeEntryIcon";
 
 export type ComposerCommandItem =

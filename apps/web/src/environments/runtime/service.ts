@@ -73,7 +73,6 @@ import {
   derivePhysicalProjectKey,
 } from "../../logicalProject";
 import { getClientSettings } from "~/hooks/useSettings";
-import { isAppUpdatesPaused } from "~/appActivityStore";
 
 type EnvironmentServiceState = {
   readonly queryClient: QueryClient;
@@ -93,20 +92,11 @@ type ThreadDetailSubscriptionEntry = {
 };
 
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
-let missedEnvironmentUpdatesWhilePaused = false;
 class SavedEnvironmentConnectionCancelledError extends Error {
   constructor(environmentId: EnvironmentId) {
     super(`Saved environment ${environmentId} connection was cancelled.`);
     this.name = "SavedEnvironmentConnectionCancelledError";
   }
-}
-
-function shouldApplyEnvironmentUpdate(): boolean {
-  if (!isAppUpdatesPaused()) {
-    return true;
-  }
-  missedEnvironmentUpdatesWhilePaused = true;
-  return false;
 }
 
 function isSavedEnvironmentConnectionCancelledError(
@@ -384,9 +374,6 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
   entry.unsubscribe = connection.client.orchestration.subscribeThread(
     { threadId: entry.threadId },
     (item) => {
-      if (!shouldApplyEnvironmentUpdate()) {
-        return;
-      }
       if (item.kind === "snapshot") {
         useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
         return;
@@ -1041,16 +1028,10 @@ export function applyEnvironmentThreadDetailEvent(
   event: OrchestrationEvent,
   environmentId: EnvironmentId,
 ) {
-  if (!shouldApplyEnvironmentUpdate()) {
-    return;
-  }
   applyRecoveredEventBatch([event], environmentId);
 }
 
 function applyShellEvent(event: OrchestrationShellStreamEvent, environmentId: EnvironmentId) {
-  if (!shouldApplyEnvironmentUpdate()) {
-    return;
-  }
   if (
     !shouldApplyProjectionEvent({
       current: readLastAppliedProjectionVersion(environmentId),
@@ -1104,9 +1085,6 @@ function createEnvironmentConnectionHandlers() {
   return {
     applyShellEvent,
     syncShellSnapshot: (snapshot: OrchestrationShellSnapshot, environmentId: EnvironmentId) => {
-      if (!shouldApplyEnvironmentUpdate()) {
-        return;
-      }
       if (
         !shouldApplyProjectionSnapshot({
           current: readLastAppliedProjectionVersion(environmentId),
@@ -1126,9 +1104,6 @@ function createEnvironmentConnectionHandlers() {
       reconcileSnapshotDerivedState();
     },
     applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => {
-      if (!shouldApplyEnvironmentUpdate()) {
-        return;
-      }
       const threadRef = scopeThreadRef(environmentId, ThreadId.make(event.threadId));
       const serverThread = selectThreadByRef(useStore.getState(), threadRef);
       const hasDraftThread =
@@ -1523,14 +1498,6 @@ function reconnectEnvironmentConnectionsAfterBrowserResume(reason: string): void
   }
 }
 
-export function resumePausedEnvironmentUpdates(): void {
-  if (!missedEnvironmentUpdatesWhilePaused) {
-    return;
-  }
-  missedEnvironmentUpdatesWhilePaused = false;
-  reconnectEnvironmentConnectionsAfterBrowserResume("app-activity-resume");
-}
-
 function subscribeBrowserResumeReconnects(): () => void {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return NOOP;
@@ -1846,7 +1813,6 @@ export async function resetEnvironmentServiceForTests(): Promise<void> {
   stopActiveService();
   lastBrowserHiddenAt = null;
   lastBrowserResumeReconnectAt = Number.NEGATIVE_INFINITY;
-  missedEnvironmentUpdatesWhilePaused = false;
   lastAppliedProjectionVersionByEnvironment.clear();
   pendingSavedEnvironmentConnections.clear();
   for (const key of Array.from(threadDetailSubscriptions.keys())) {

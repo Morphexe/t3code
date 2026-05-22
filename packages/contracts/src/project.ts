@@ -1,13 +1,5 @@
 import * as Schema from "effect/Schema";
-import {
-  IsoDateTime,
-  MessageId,
-  PositiveInt,
-  ProjectId,
-  ThreadId,
-  TrimmedNonEmptyString,
-} from "./baseSchemas.ts";
-import { ModelSelection, ProviderInteractionMode, RuntimeMode } from "./orchestration.ts";
+import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
@@ -42,30 +34,6 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
   },
 ) {}
 
-const ProjectFileAccessReason = Schema.Literals(["not-found", "outside-root", "unknown"]);
-export type ProjectFileAccessReason = typeof ProjectFileAccessReason.Type;
-
-export const ProjectReadFileInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
-  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-});
-export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
-
-export const ProjectReadFileResult = Schema.Struct({
-  relativePath: TrimmedNonEmptyString,
-  contents: Schema.String,
-});
-export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
-
-export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFileError>()(
-  "ProjectReadFileError",
-  {
-    message: TrimmedNonEmptyString,
-    reason: ProjectFileAccessReason,
-    cause: Schema.optional(Schema.Defect),
-  },
-) {}
-
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
@@ -80,45 +48,6 @@ export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 
 export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
   "ProjectWriteFileError",
-  {
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect),
-  },
-) {}
-
-const ProjectRunCommandCreateThreadSeed = Schema.Struct({
-  projectId: ProjectId,
-  title: TrimmedNonEmptyString,
-  modelSelection: ModelSelection,
-  runtimeMode: RuntimeMode,
-  interactionMode: ProviderInteractionMode,
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  createdAt: IsoDateTime,
-});
-export type ProjectRunCommandCreateThreadSeed = typeof ProjectRunCommandCreateThreadSeed.Type;
-
-export const ProjectRunCommandInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
-  invocation: TrimmedNonEmptyString,
-  threadId: ThreadId,
-  messageId: MessageId,
-  modelSelection: ModelSelection,
-  runtimeMode: RuntimeMode,
-  interactionMode: ProviderInteractionMode,
-  createdAt: IsoDateTime,
-  createThread: Schema.optional(ProjectRunCommandCreateThreadSeed),
-});
-export type ProjectRunCommandInput = typeof ProjectRunCommandInput.Type;
-
-export const ProjectRunCommandResult = Schema.Struct({
-  sequence: PositiveInt,
-  messageText: TrimmedNonEmptyString,
-});
-export type ProjectRunCommandResult = typeof ProjectRunCommandResult.Type;
-
-export class ProjectRunCommandError extends Schema.TaggedErrorClass<ProjectRunCommandError>()(
-  "ProjectRunCommandError",
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),

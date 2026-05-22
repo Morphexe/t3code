@@ -220,38 +220,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         assert.equal(env.VITE_WS_URL, "ws://localhost:13773");
       }),
     );
-
-    it.effect("assigns explicit orchestrator ports for dev:all", () =>
-      Effect.gen(function* () {
-        const env = yield* createDevRunnerEnv({
-          mode: "dev:all",
-          baseEnv: {
-            PORT: "do-not-reuse-for-orchestrator",
-            T3CODE_ORCHESTRATION_PROJECT_ROOT: "/repo/project",
-          },
-          serverOffset: 2,
-          webOffset: 2,
-          t3Home: undefined,
-          noBrowser: undefined,
-          autoBootstrapProjectFromCwd: undefined,
-          logWebSocketEvents: undefined,
-          host: undefined,
-          port: undefined,
-          devUrl: undefined,
-        });
-
-        assert.equal(env.T3CODE_MODE, "web");
-        assert.equal(env.T3CODE_PORT, "13775");
-        assert.equal(env.PORT, "5735");
-        assert.equal(env.API_PORT, "3003");
-        assert.equal(env.UI_PORT, undefined);
-        assert.equal(env.VITE_DEV_PORT, undefined);
-        assert.equal(env.VITE_ORCHESTRATOR_API_URL, "http://localhost:3003");
-        assert.equal(env.T3CODE_ORCHESTRATOR_EMBEDDED, "1");
-        assert.equal(env.T3CODE_ORCHESTRATION_PROJECT_ROOT, "/repo/project");
-        assert.equal(env.T3CODE_BASE_URL, "http://localhost:13775");
-      }),
-    );
   });
 
   describe("findFirstAvailableOffset", () => {
@@ -339,21 +307,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         });
 
         assert.deepStrictEqual(offsets, { serverOffset: 1, webOffset: 1 });
-      }),
-    );
-
-    it.effect("uses a shared fallback offset for dev:all including the orchestrator API port", () =>
-      Effect.gen(function* () {
-        const taken = new Set([13773, 5733, 3001, 3002]);
-        const offsets = yield* resolveModePortOffsets({
-          mode: "dev:all",
-          startOffset: 0,
-          hasExplicitServerPort: false,
-          hasExplicitDevUrl: false,
-          checkPortAvailability: (port) => Effect.succeed(!taken.has(port)),
-        });
-
-        assert.deepStrictEqual(offsets, { serverOffset: 2, webOffset: 2 });
       }),
     );
 

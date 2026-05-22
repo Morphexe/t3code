@@ -8,7 +8,6 @@ import * as Effect from "effect/Effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import { ServerAuth } from "../auth/Services/ServerAuth.ts";
-import { respondToAuthError } from "../auth/http.ts";
 import { normalizeDispatchCommand } from "./Normalizer.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
@@ -59,36 +58,6 @@ export const orchestrationSnapshotRouteLayer = HttpRouter.add(
       status: 200,
     });
   }).pipe(
-    Effect.catchTag("AuthError", respondToAuthError),
-    Effect.catchTag("OrchestrationDispatchCommandError", respondToOrchestrationHttpError),
-    Effect.catchTag("OrchestrationGetSnapshotError", respondToOrchestrationHttpError),
-  ),
-);
-
-export const orchestrationProjectsRouteLayer = HttpRouter.add(
-  "GET",
-  "/api/orchestration/projects",
-  Effect.gen(function* () {
-    yield* authenticateOwnerSession;
-    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-    const snapshot = yield* projectionSnapshotQuery.getShellSnapshot().pipe(
-      Effect.mapError(
-        (cause) =>
-          new OrchestrationGetSnapshotError({
-            message: "Failed to load orchestration projects.",
-            cause,
-          }),
-      ),
-    );
-    return HttpServerResponse.jsonUnsafe(
-      {
-        projects: snapshot.projects,
-        snapshotSequence: snapshot.snapshotSequence,
-      },
-      { status: 200 },
-    );
-  }).pipe(
-    Effect.catchTag("AuthError", respondToAuthError),
     Effect.catchTag("OrchestrationDispatchCommandError", respondToOrchestrationHttpError),
     Effect.catchTag("OrchestrationGetSnapshotError", respondToOrchestrationHttpError),
   ),
@@ -120,8 +89,5 @@ export const orchestrationDispatchRouteLayer = HttpRouter.add(
       ),
     );
     return HttpServerResponse.jsonUnsafe(result, { status: 200 });
-  }).pipe(
-    Effect.catchTag("AuthError", respondToAuthError),
-    Effect.catchTag("OrchestrationDispatchCommandError", respondToOrchestrationHttpError),
-  ),
+  }).pipe(Effect.catchTag("OrchestrationDispatchCommandError", respondToOrchestrationHttpError)),
 );

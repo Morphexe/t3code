@@ -604,35 +604,3 @@ label:has(> select#reasoning-effort) select {
 .dark .model-picker-list::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
 }
-
-.workflow-preview-content .wmde-markdown {
-  color: var(--foreground);
-  background: transparent;
-  font-size: 0.875rem;
-  line-height: 1.6;
-}
-
-.workflow-preview-content .wmde-markdown h1,
-.workflow-preview-content .wmde-markdown h2,
-.workflow-preview-content .wmde-markdown h3 {
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  font-size: 0.95rem;
-  line-height: 1.35;
-}
-
-.workflow-preview-content .wmde-markdown p,
-.workflow-preview-content .wmde-markdown ul,
-.workflow-preview-content .wmde-markdown ol {
-  margin: 0 0 0.75rem;
-}
-
-.workflow-preview-content .wmde-markdown li + li {
-  margin-top: 0.25rem;
-}
-
-@layer components {
-  .form-input {
-    @apply h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20;
-  }
-}

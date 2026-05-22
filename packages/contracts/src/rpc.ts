@@ -53,9 +53,6 @@ import {
   ProjectReadFileError,
   ProjectReadFileInput,
   ProjectReadFileResult,
-  ProjectRunCommandError,
-  ProjectRunCommandInput,
-  ProjectRunCommandResult,
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
@@ -113,7 +110,6 @@ export const WS_METHODS = {
   projectsReadFile: "projects.readFile",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
-  projectsRunCommand: "projects.runCommand",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -288,12 +284,6 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
   error: ProjectWriteFileError,
-});
-
-export const WsProjectsRunCommandRpc = Rpc.make(WS_METHODS.projectsRunCommand, {
-  payload: ProjectRunCommandInput,
-  success: ProjectRunCommandResult,
-  error: ProjectRunCommandError,
 });
 
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
@@ -511,7 +501,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsWriteFileRpc,
-  WsProjectsRunCommandRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsSubscribeVcsStatusRpc,

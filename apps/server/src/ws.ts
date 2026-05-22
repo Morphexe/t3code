@@ -64,7 +64,6 @@ import { VcsProvisioningService } from "./vcs/VcsProvisioningService.ts";
 import { GitWorkflowService } from "./git/GitWorkflowService.ts";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner.ts";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
-import { runProjectWorkflowCommand } from "./project/projectCommandRunner.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -199,14 +198,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
-      const runProjectCommand = runProjectWorkflowCommand({
-        git: gitWorkflow,
-        orchestrationEngine,
-        projectionSnapshotQuery,
-        projectSetupScriptRunner,
-        terminalManager,
-        workspaceFileSystem,
-      });
 
       const loadAuthAccessSnapshot = () =>
         Effect.all({
@@ -1039,10 +1030,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "workspace" },
           ),
-        [WS_METHODS.projectsRunCommand]: (input) =>
-          observeRpcEffect(WS_METHODS.projectsRunCommand, runProjectCommand(input), {
-            "rpc.aggregate": "workspace",
-          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",

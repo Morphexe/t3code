@@ -9,13 +9,8 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useShallow } from "zustand/react/shallow";
 
 import { APP_DISPLAY_NAME } from "../branding";
-import {
-  deriveAgentNotificationTransition,
-  playNotificationSoundSequence,
-} from "../agentNotificationSounds";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -48,14 +43,13 @@ import {
   useServerConfigUpdatedSubscription,
   useServerWelcomeSubscription,
 } from "../rpc/serverState";
-import { selectSidebarThreadsAcrossEnvironments, useStore } from "../store";
+import { useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
   listSavedEnvironmentRecords,
-  resumePausedEnvironmentUpdates,
   waitForSavedEnvironmentRegistryHydration,
   startEnvironmentConnectionService,
   useSavedEnvironmentRegistryStore,
@@ -68,7 +62,6 @@ import {
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
-import { startAppActivityMonitor, useAppActivityStore } from "../appActivityStore";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -141,9 +134,7 @@ function RootRouteView() {
       <AnchoredToastProvider>
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         {primaryEnvironmentAuthenticated ? <ServerStateBootstrap /> : null}
-        <AppActivityBootstrap />
         <EnvironmentConnectionManagerBootstrap />
-        {primaryEnvironmentAuthenticated ? <AgentNotificationSoundCoordinator /> : null}
         <SshPasswordPromptDialog />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
@@ -155,39 +146,8 @@ function RootRouteView() {
         ) : (
           appShell
         )}
-        <AppPausedOverlay />
       </AnchoredToastProvider>
     </ToastProvider>
-  );
-}
-
-function AppActivityBootstrap() {
-  useEffect(() => {
-    return startAppActivityMonitor({
-      onResumeFromPause: resumePausedEnvironmentUpdates,
-    });
-  }, []);
-
-  return null;
-}
-
-function AppPausedOverlay() {
-  const paused = useAppActivityStore((state) => state.paused);
-
-  if (!paused) {
-    return null;
-  }
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-background/80 px-4 text-foreground backdrop-blur-sm">
-      <section className="w-full max-w-md rounded-xl border border-border/80 bg-card/95 p-5 text-center shadow-2xl shadow-black/15">
-        <p className="text-sm font-semibold">App paused</p>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Live updates are paused after 30 seconds without interaction. Click, type, scroll, or
-          focus this window to refresh before continuing.
-        </p>
-      </section>
-    </div>
   );
 }
 
@@ -314,33 +274,6 @@ function EnvironmentConnectionManagerBootstrap() {
   useEffect(() => {
     return startEnvironmentConnectionService(queryClient);
   }, [queryClient]);
-
-  return null;
-}
-
-function AgentNotificationSoundCoordinator() {
-  const threads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
-  const agentRequiresInputSound = useSettings((settings) => settings.agentRequiresInputSound);
-  const agentFinishedSound = useSettings((settings) => settings.agentFinishedSound);
-  const previousThreadStateRef = useRef<
-    ReturnType<typeof deriveAgentNotificationTransition>["next"] | null
-  >(null);
-
-  useEffect(() => {
-    const transition = deriveAgentNotificationTransition(previousThreadStateRef.current, threads);
-    previousThreadStateRef.current = transition.next;
-
-    const presets = [
-      ...(transition.shouldPlayRequiresInputSound ? [agentRequiresInputSound] : []),
-      ...(transition.shouldPlayFinishedSound ? [agentFinishedSound] : []),
-    ];
-
-    if (presets.length === 0) {
-      return;
-    }
-
-    void playNotificationSoundSequence(presets);
-  }, [agentFinishedSound, agentRequiresInputSound, threads]);
 
   return null;
 }

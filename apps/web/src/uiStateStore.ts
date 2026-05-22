@@ -207,10 +207,6 @@ export function persistState(state: UiState): void {
 
 const debouncedPersistState = new Debouncer(persistState, { wait: 500 });
 
-export function flushUiStatePersistence(): void {
-  debouncedPersistState.flush();
-}
-
 function recordsEqual<T>(left: Record<string, T>, right: Record<string, T>): boolean {
   const leftEntries = Object.entries(left);
   const rightEntries = Object.entries(right);

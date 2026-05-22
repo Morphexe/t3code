@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  type NotificationSoundPreset,
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
   PROVIDER_DISPLAY_NAMES,
@@ -18,7 +17,6 @@ import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-import { playNotificationSoundPreset } from "../../agentNotificationSounds";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -33,7 +31,6 @@ import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hos
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { readEnvironmentApi } from "../../environmentApi";
 import {
   setDesktopUpdateStateQueryData,
   useDesktopUpdateState,
@@ -48,16 +45,8 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { useShallow } from "zustand/react/shallow";
-import {
-  selectProjectsAcrossEnvironments,
-  selectSidebarThreadsAcrossEnvironments,
-  useStore,
-} from "../../store";
-import {
-  refreshArchivedThreadsForEnvironment,
-  useArchivedThreadSnapshots,
-} from "../../lib/archivedThreadsState";
-import { newCommandId } from "../../lib/utils";
+import { selectProjectsAcrossEnvironments, useStore } from "../../store";
+import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -111,42 +100,6 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
-
-const NOTIFICATION_SOUND_LABELS = {
-  off: "Off",
-  bell: "Bell",
-  chime: "Chime",
-  glass: "Glass",
-  pop: "Pop",
-} as const satisfies Record<NotificationSoundPreset, string>;
-
-const OLD_CONVERSATION_RETENTION_DAYS = 7;
-const OLD_CONVERSATION_RETENTION_MS = OLD_CONVERSATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-
-type OldConversationCleanupCandidate = {
-  readonly threadRef: ScopedThreadRef;
-  readonly title: string;
-};
-
-function getThreadLastActivityAt(thread: {
-  readonly latestUserMessageAt?: string | null;
-  readonly updatedAt?: string | null | undefined;
-  readonly createdAt: string;
-}) {
-  return thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt;
-}
-
-function isOlderThanRetentionWindow(
-  thread: {
-    readonly latestUserMessageAt?: string | null;
-    readonly updatedAt?: string | null | undefined;
-    readonly createdAt: string;
-  },
-  cutoffMs: number,
-) {
-  const lastActivityMs = Date.parse(getThreadLastActivityAt(thread));
-  return Number.isFinite(lastActivityMs) && lastActivityMs < cutoffMs;
-}
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -471,12 +424,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
-      ...(settings.agentRequiresInputSound !== DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound
-        ? ["Agent requires input sound"]
-        : []),
-      ...(settings.agentFinishedSound !== DEFAULT_UNIFIED_SETTINGS.agentFinishedSound
-        ? ["Agent finished sound"]
-        : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
     ],
     [
@@ -484,8 +431,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.autoOpenPlanSidebar,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
-      settings.agentFinishedSound,
-      settings.agentRequiresInputSound,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffIgnoreWhitespace,
@@ -538,14 +483,6 @@ export function GeneralSettingsPanel() {
   const { updateSettings } = useUpdateSettings();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
-  const [isCleaningOldConversations, setIsCleaningOldConversations] = useState(false);
-  const activeThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
-  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
-  const environmentIds = useMemo(
-    () => [...new Set(projects.map((project) => project.environmentId))],
-    [projects],
-  );
-  const archivedThreadSnapshots = useArchivedThreadSnapshots(environmentIds);
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -576,102 +513,6 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
-  const oldConversationCandidates = useMemo(() => {
-    const cutoffMs = Date.now() - OLD_CONVERSATION_RETENTION_MS;
-    const candidatesByKey = new Map<string, OldConversationCleanupCandidate>();
-
-    for (const thread of activeThreads) {
-      if (thread.session?.status === "running") continue;
-      if (!isOlderThanRetentionWindow(thread, cutoffMs)) continue;
-      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-      candidatesByKey.set(`${threadRef.environmentId}:${threadRef.threadId}`, {
-        threadRef,
-        title: thread.title,
-      });
-    }
-
-    for (const { environmentId, snapshot } of archivedThreadSnapshots.snapshots) {
-      for (const thread of snapshot.threads) {
-        if (thread.session?.status === "running") continue;
-        if (!isOlderThanRetentionWindow(thread, cutoffMs)) continue;
-        const threadRef = scopeThreadRef(environmentId, thread.id);
-        candidatesByKey.set(`${threadRef.environmentId}:${threadRef.threadId}`, {
-          threadRef,
-          title: thread.title,
-        });
-      }
-    }
-
-    return [...candidatesByKey.values()];
-  }, [activeThreads, archivedThreadSnapshots.snapshots]);
-
-  const updateNotificationSound = useCallback(
-    (key: "agentRequiresInputSound" | "agentFinishedSound", value: NotificationSoundPreset) => {
-      updateSettings({ [key]: value });
-      void playNotificationSoundPreset(value);
-    },
-    [updateSettings],
-  );
-
-  const handleCleanOldConversations = useCallback(async () => {
-    if (oldConversationCandidates.length === 0 || isCleaningOldConversations) return;
-
-    const confirmed = window.confirm(
-      [
-        `Delete ${oldConversationCandidates.length} conversation${
-          oldConversationCandidates.length === 1 ? "" : "s"
-        } older than ${OLD_CONVERSATION_RETENTION_DAYS} days?`,
-        "",
-        "This permanently clears their conversation history.",
-      ].join("\n"),
-    );
-    if (!confirmed) return;
-
-    setIsCleaningOldConversations(true);
-    let deletedCount = 0;
-    try {
-      for (const candidate of oldConversationCandidates) {
-        const api = readEnvironmentApi(candidate.threadRef.environmentId);
-        if (!api) continue;
-
-        try {
-          await api.terminal.close({
-            threadId: candidate.threadRef.threadId,
-            deleteHistory: true,
-          });
-        } catch {
-          // The thread may be archived or may not have an open terminal.
-        }
-
-        await api.orchestration.dispatchCommand({
-          type: "thread.delete",
-          commandId: newCommandId(),
-          threadId: candidate.threadRef.threadId,
-        });
-        refreshArchivedThreadsForEnvironment(candidate.threadRef.environmentId);
-        deletedCount += 1;
-      }
-
-      archivedThreadSnapshots.refresh();
-      toastManager.add(
-        stackedThreadToast({
-          type: "success",
-          title: "Old conversations cleaned",
-          description: `Deleted ${deletedCount} conversation${deletedCount === 1 ? "" : "s"}.`,
-        }),
-      );
-    } catch (error) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to clean old conversations",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-    } finally {
-      setIsCleaningOldConversations(false);
-    }
-  }, [archivedThreadSnapshots, isCleaningOldConversations, oldConversationCandidates]);
 
   return (
     <SettingsPageContainer>
@@ -972,117 +813,6 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Confirm thread deletion"
             />
-          }
-        />
-
-        <SettingsRow
-          title="Clean old conversations"
-          description={`Delete conversations whose last activity is older than ${OLD_CONVERSATION_RETENTION_DAYS} days. Running conversations are skipped.`}
-          control={
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={
-                isCleaningOldConversations ||
-                archivedThreadSnapshots.isLoading ||
-                oldConversationCandidates.length === 0
-              }
-              onClick={() => void handleCleanOldConversations()}
-            >
-              {isCleaningOldConversations ? (
-                <>
-                  <LoaderIcon className="size-3.5 animate-spin" />
-                  Cleaning
-                </>
-              ) : oldConversationCandidates.length === 0 ? (
-                "Nothing to clean"
-              ) : (
-                `Clean ${oldConversationCandidates.length}`
-              )}
-            </Button>
-          }
-        />
-
-        <SettingsRow
-          title="Agent requires input"
-          description="Played when an agent pauses for approval or asks for a response."
-          resetAction={
-            settings.agentRequiresInputSound !==
-            DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound ? (
-              <SettingResetButton
-                label="agent requires input sound"
-                onClick={() =>
-                  updateSettings({
-                    agentRequiresInputSound: DEFAULT_UNIFIED_SETTINGS.agentRequiresInputSound,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.agentRequiresInputSound}
-              onValueChange={(value) => {
-                if (typeof value === "string" && value in NOTIFICATION_SOUND_LABELS) {
-                  updateNotificationSound(
-                    "agentRequiresInputSound",
-                    value as NotificationSoundPreset,
-                  );
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Agent requires input sound">
-                <SelectValue>
-                  {NOTIFICATION_SOUND_LABELS[settings.agentRequiresInputSound]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, label]) => (
-                  <SelectItem hideIndicator key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          title="Agent finished"
-          description="Played when a turn settles and the agent stops working."
-          resetAction={
-            settings.agentFinishedSound !== DEFAULT_UNIFIED_SETTINGS.agentFinishedSound ? (
-              <SettingResetButton
-                label="agent finished sound"
-                onClick={() =>
-                  updateSettings({
-                    agentFinishedSound: DEFAULT_UNIFIED_SETTINGS.agentFinishedSound,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.agentFinishedSound}
-              onValueChange={(value) => {
-                if (typeof value === "string" && value in NOTIFICATION_SOUND_LABELS) {
-                  updateNotificationSound("agentFinishedSound", value as NotificationSoundPreset);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Agent finished sound">
-                <SelectValue>{NOTIFICATION_SOUND_LABELS[settings.agentFinishedSound]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {Object.entries(NOTIFICATION_SOUND_LABELS).map(([value, label]) => (
-                  <SelectItem hideIndicator key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
           }
         />
 

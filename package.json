@@ -30,7 +30,6 @@
   "scripts": {
     "prepare": "effect-language-service patch",
     "dev": "node scripts/dev-runner.ts dev",
-    "dev:all": "node scripts/dev-runner.ts dev:all",
     "dev:server": "node scripts/dev-runner.ts dev:server",
     "dev:web": "node scripts/dev-runner.ts dev:web",
     "dev:marketing": "turbo run dev --filter=@t3tools/marketing",

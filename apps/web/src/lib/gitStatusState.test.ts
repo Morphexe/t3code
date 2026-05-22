@@ -89,10 +89,6 @@ function createRegisteredGitStatusClient(environmentId: EnvironmentId) {
       })),
       searchEntries: vi.fn(async () => []),
       writeFile: vi.fn(async () => undefined),
-      runCommand: vi.fn(async () => ({
-        sequence: 1,
-        messageText: "Run workflow.",
-      })),
     },
     shell: {
       openInEditor: vi.fn(async () => undefined),
