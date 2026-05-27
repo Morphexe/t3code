@@ -1460,6 +1460,44 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         await removeProject(member);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error removing project.";
+        if (message.includes("cannot be deleted without force=true")) {
+          const confirmedForceDelete = await api.dialogs.confirm(
+            [
+              `Remove project "${member.name}" and delete its threads?`,
+              `Path: ${member.cwd}`,
+              ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
+              "The project still has conversation history that was not shown in the sidebar count.",
+              "This permanently clears conversation history for those threads.",
+              "This removes only this project entry.",
+              "This action cannot be undone.",
+            ].join("\n"),
+          );
+          if (!confirmedForceDelete) {
+            return;
+          }
+
+          try {
+            await removeProject(member, { force: true });
+            return;
+          } catch (forceError) {
+            const forceMessage =
+              forceError instanceof Error ? forceError.message : "Unknown error removing project.";
+            console.error("Failed to force remove project", {
+              projectId: member.id,
+              environmentId: member.environmentId,
+              error: forceError,
+            });
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: `Failed to remove "${member.name}"`,
+                description: forceMessage,
+              }),
+            );
+            return;
+          }
+        }
+
         console.error("Failed to remove project", {
           projectId: member.id,
           environmentId: member.environmentId,

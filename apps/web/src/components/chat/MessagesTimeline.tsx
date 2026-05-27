@@ -1104,6 +1104,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const ctx = use(TimelineRowCtx);
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -1118,6 +1119,8 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+  const imagePreviewUrl =
+    workEntry.itemType === "image_view" ? workEntry.imagePreviewUrl : undefined;
 
   return (
     <div className="rounded-lg px-1 py-1">
@@ -1195,6 +1198,26 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           )}
         </div>
       </div>
+      {imagePreviewUrl && (
+        <button
+          type="button"
+          className="mt-1 ml-7 block max-w-[360px] overflow-hidden rounded-lg border border-border/70 bg-background/70 text-left"
+          aria-label={`Preview ${heading}`}
+          onClick={() => {
+            ctx.onImageExpand({
+              images: [{ src: imagePreviewUrl, name: preview ?? heading }],
+              index: 0,
+            });
+          }}
+        >
+          <img
+            src={imagePreviewUrl}
+            alt={preview ?? heading}
+            className="block max-h-[260px] w-full object-contain"
+            loading="lazy"
+          />
+        </button>
+      )}
       {hasChangedFiles && !previewIsChangedFiles && (
         <div className="mt-1 flex flex-wrap gap-1 pl-6">
           {workEntry.changedFiles?.slice(0, 4).map((filePath) => {

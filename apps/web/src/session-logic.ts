@@ -55,6 +55,7 @@ export interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
+  imagePreviewUrl?: string;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
@@ -554,6 +555,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
+  const imagePreviewUrl = extractImagePreviewUrl(payload);
   if (detail) {
     entry.detail = detail;
   }
@@ -565,6 +567,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (imagePreviewUrl) {
+    entry.imagePreviewUrl = imagePreviewUrl;
   }
   if (title) {
     entry.toolTitle = title;
@@ -645,6 +650,9 @@ function mergeDerivedWorkLogEntries(
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...((next.imagePreviewUrl ?? previous.imagePreviewUrl)
+      ? { imagePreviewUrl: next.imagePreviewUrl ?? previous.imagePreviewUrl }
+      : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
@@ -1041,6 +1049,50 @@ function extractWorkLogRequestKind(
     return payload.requestKind;
   }
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
+}
+
+function isPreviewableImageUrl(value: string): boolean {
+  if (value.startsWith("data:image/")) return true;
+  if (value.startsWith("/attachments/")) return true;
+  if (!/^https?:\/\//iu.test(value)) return false;
+  return /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/iu.test(value);
+}
+
+function findImagePreviewUrl(value: unknown, seen: Set<unknown>, depth: number): string | null {
+  const direct = asTrimmedString(value);
+  if (direct && isPreviewableImageUrl(direct)) {
+    return direct;
+  }
+  if (depth > 5 || value === null || typeof value !== "object" || seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findImagePreviewUrl(entry, seen, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["url", "imageUrl", "image_url", "src", "dataUrl", "data_url", "href"]) {
+    const found = findImagePreviewUrl(record[key], seen, depth + 1);
+    if (found) return found;
+  }
+  for (const nestedValue of Object.values(record)) {
+    const found = findImagePreviewUrl(nestedValue, seen, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function extractImagePreviewUrl(payload: Record<string, unknown> | null): string | null {
+  if (extractWorkLogItemType(payload) !== "image_view") {
+    return null;
+  }
+  return findImagePreviewUrl(payload, new Set<unknown>(), 0);
 }
 
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {

@@ -7,6 +7,8 @@
  *
  * @module CodexAdapterLive
  */
+import crypto from "node:crypto";
+
 import {
   type CanonicalItemType,
   type CanonicalRequestType,
@@ -28,6 +30,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -67,6 +70,9 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
   CodexSessionRuntimeThreadIdMissingError,
 );
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
+
+const PREVIEWABLE_IMAGE_EXTENSIONS = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
+const MAX_MATERIALIZED_IMAGE_PREVIEW_BYTES = 25 * 1024 * 1024;
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
@@ -279,6 +285,96 @@ function itemDetail(item: CodexLifecycleItem): string | undefined {
     return trimmed;
   }
   return undefined;
+}
+
+function imageViewPathFromRuntimeEvent(event: ProviderRuntimeEvent): string | null {
+  if (
+    (event.type !== "item.started" &&
+      event.type !== "item.updated" &&
+      event.type !== "item.completed") ||
+    event.payload.itemType !== "image_view"
+  ) {
+    return null;
+  }
+  const data = event.payload.data;
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const item = (data as { readonly item?: unknown }).item;
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const path = (item as { readonly path?: unknown }).path;
+  return typeof path === "string" && path.trim().length > 0 ? path.trim() : null;
+}
+
+function withImagePreviewUrl(
+  event: ProviderRuntimeEvent,
+  imagePreviewUrl: string,
+): ProviderRuntimeEvent {
+  return {
+    ...event,
+    payload: {
+      ...event.payload,
+      imagePreviewUrl,
+    },
+  } as ProviderRuntimeEvent;
+}
+
+function materializeImageViewPreviewUrl(input: {
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly path: Path.Path;
+  readonly attachmentsDir: string;
+  readonly imagePath: string;
+}) {
+  const extension = input.path.extname(input.imagePath).toLowerCase();
+  if (!PREVIEWABLE_IMAGE_EXTENSIONS.has(extension)) {
+    return Effect.succeed(null);
+  }
+  const absoluteImagePath = input.path.resolve(input.imagePath);
+  const attachmentId = `codex-image-view-${crypto.randomUUID()}`;
+  const attachmentFilename = `${attachmentId}${extension}`;
+  const attachmentPath = input.path.join(input.attachmentsDir, attachmentFilename);
+
+  return Effect.gen(function* () {
+    const fileInfo = yield* input.fileSystem
+      .stat(absoluteImagePath)
+      .pipe(Effect.catch(() => Effect.succeed(null)));
+    if (
+      !fileInfo ||
+      fileInfo.type !== "File" ||
+      fileInfo.size > MAX_MATERIALIZED_IMAGE_PREVIEW_BYTES
+    ) {
+      return null;
+    }
+
+    const bytes = yield* input.fileSystem.readFile(absoluteImagePath);
+    yield* input.fileSystem.makeDirectory(input.attachmentsDir, { recursive: true });
+    yield* input.fileSystem.writeFile(attachmentPath, bytes);
+    return `/attachments/${attachmentFilename}`;
+  }).pipe(Effect.catch(() => Effect.succeed(null)));
+}
+
+function materializeImageViewRuntimeEvent(input: {
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly path: Path.Path;
+  readonly attachmentsDir: string;
+  readonly event: ProviderRuntimeEvent;
+}) {
+  const imagePath = imageViewPathFromRuntimeEvent(input.event);
+  if (!imagePath) {
+    return Effect.succeed(input.event);
+  }
+
+  return Effect.gen(function* () {
+    const imagePreviewUrl = yield* materializeImageViewPreviewUrl({
+      fileSystem: input.fileSystem,
+      path: input.path,
+      attachmentsDir: input.attachmentsDir,
+      imagePath,
+    });
+    return imagePreviewUrl ? withImagePreviewUrl(input.event, imagePreviewUrl) : input.event;
+  });
 }
 
 function toRequestTypeFromMethod(method: string): CanonicalRequestType {
@@ -1348,6 +1444,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("codex");
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverConfig = yield* Effect.service(ServerConfig);
   const nativeEventLogger =
@@ -1430,7 +1527,18 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               });
               return;
             }
-            yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
+            const materializedRuntimeEvents = yield* Effect.forEach(
+              runtimeEvents,
+              (runtimeEvent) =>
+                materializeImageViewRuntimeEvent({
+                  fileSystem,
+                  path,
+                  attachmentsDir: serverConfig.attachmentsDir,
+                  event: runtimeEvent,
+                }),
+              { concurrency: 1 },
+            );
+            yield* Queue.offerAll(runtimeEventQueue, materializedRuntimeEvents);
           }),
         ).pipe(Effect.forkChild);
 
