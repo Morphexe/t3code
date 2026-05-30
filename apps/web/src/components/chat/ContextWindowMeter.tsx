@@ -19,8 +19,8 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
   const totalProcessedTokens = usage.totalProcessedTokens ?? usage.usedTokens;
   const showProcessedTotal = totalProcessedTokens > usage.usedTokens;
   const visibleUsageLabel = usage.maxTokens
-    ? `${formatContextWindowTokens(usage.usedTokens)}/${formatContextWindowTokens(usage.maxTokens)}`
-    : `${formatContextWindowTokens(usage.usedTokens)} ctx`;
+    ? `ctx ${formatContextWindowTokens(usage.usedTokens)}/${formatContextWindowTokens(usage.maxTokens)}`
+    : `ctx ${formatContextWindowTokens(usage.usedTokens)}`;
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (normalizedPercentage / 100) * circumference;
@@ -79,7 +79,8 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
                   : formatContextWindowTokens(usage.usedTokens)}
               </span>
             </span>
-            <span className="hidden items-baseline gap-1 whitespace-nowrap text-[11px] leading-none sm:inline-flex">
+            <span className="inline-flex items-baseline gap-1 whitespace-nowrap text-[11px] leading-none">
+              <span className="text-muted-foreground/75">Tokens</span>
               <span className="font-medium text-foreground/80">{visibleUsageLabel}</span>
               {showProcessedTotal ? (
                 <span className="text-muted-foreground/75">
