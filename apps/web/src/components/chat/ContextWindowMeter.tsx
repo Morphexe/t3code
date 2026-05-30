@@ -16,6 +16,11 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
   const { usage } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
+  const totalProcessedTokens = usage.totalProcessedTokens ?? usage.usedTokens;
+  const showProcessedTotal = totalProcessedTokens > usage.usedTokens;
+  const visibleUsageLabel = usage.maxTokens
+    ? `${formatContextWindowTokens(usage.usedTokens)}/${formatContextWindowTokens(usage.maxTokens)}`
+    : `${formatContextWindowTokens(usage.usedTokens)} ctx`;
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (normalizedPercentage / 100) * circumference;
@@ -29,14 +34,14 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
         render={
           <button
             type="button"
-            className="group inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-85"
+            className="group inline-flex items-center justify-center gap-1.5 rounded-md px-1 text-muted-foreground transition-opacity hover:opacity-85"
             aria-label={
               usage.maxTokens !== null && usedPercentage
-                ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
+                ? `Context window ${usedPercentage} used, ${formatContextWindowTokens(totalProcessedTokens)} total tokens processed`
+                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used, ${formatContextWindowTokens(totalProcessedTokens)} total tokens processed`
             }
           >
-            <span className="relative flex h-6 w-6 items-center justify-center">
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
               <svg
                 viewBox="0 0 24 24"
                 className="-rotate-90 absolute inset-0 h-full w-full transform-gpu"
@@ -74,6 +79,14 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
                   : formatContextWindowTokens(usage.usedTokens)}
               </span>
             </span>
+            <span className="hidden items-baseline gap-1 whitespace-nowrap text-[11px] leading-none sm:inline-flex">
+              <span className="font-medium text-foreground/80">{visibleUsageLabel}</span>
+              {showProcessedTotal ? (
+                <span className="text-muted-foreground/75">
+                  · {formatContextWindowTokens(totalProcessedTokens)} total
+                </span>
+              ) : null}
+            </span>
           </button>
         }
       />
@@ -95,13 +108,9 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
               {formatContextWindowTokens(usage.usedTokens)} tokens used so far
             </div>
           )}
-          {(usage.totalProcessedTokens ?? null) !== null &&
-          (usage.totalProcessedTokens ?? 0) > usage.usedTokens ? (
-            <div className="text-xs text-muted-foreground">
-              Total processed: {formatContextWindowTokens(usage.totalProcessedTokens ?? null)}{" "}
-              tokens
-            </div>
-          ) : null}
+          <div className="text-xs text-muted-foreground">
+            Total processed: {formatContextWindowTokens(totalProcessedTokens)} tokens
+          </div>
           {usage.compactsAutomatically ? (
             <div className="text-xs text-muted-foreground">
               Automatically compacts its context when needed.
