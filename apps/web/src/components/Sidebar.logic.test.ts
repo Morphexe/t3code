@@ -12,6 +12,7 @@ import {
   getProjectSortTimestamp,
   hasUnseenCompletion,
   isContextMenuPointerDown,
+  isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
@@ -220,6 +221,24 @@ describe("shouldClearThreadSelectionOnMouseDown", () => {
     } as unknown as HTMLElement;
 
     expect(shouldClearThreadSelectionOnMouseDown(unrelated)).toBe(true);
+  });
+});
+
+describe("isTrailingDoubleClick", () => {
+  it("treats a single click as a normal activation", () => {
+    expect(isTrailingDoubleClick(1)).toBe(false);
+  });
+
+  it("treats synthetic/keyboard activations (detail 0) as a normal activation", () => {
+    expect(isTrailingDoubleClick(0)).toBe(false);
+  });
+
+  it("ignores the second click of a double-click so it does not navigate", () => {
+    expect(isTrailingDoubleClick(2)).toBe(true);
+  });
+
+  it("ignores further clicks of a triple-click", () => {
+    expect(isTrailingDoubleClick(3)).toBe(true);
   });
 });
 
