@@ -1631,8 +1631,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         if (message.includes("cannot be deleted without force=true")) {
           const confirmedForceDelete = await api.dialogs.confirm(
             [
-              `Remove project "${member.name}" and delete its threads?`,
-              `Path: ${member.cwd}`,
+              `Remove project "${member.title}" and delete its threads?`,
+              `Path: ${member.workspaceRoot}`,
               ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
               "The project still has conversation history that was not shown in the sidebar count.",
               "This permanently clears conversation history for those threads.",
@@ -1658,7 +1658,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: `Failed to remove "${member.name}"`,
+                title: `Failed to remove "${member.title}"`,
                 description: forceMessage,
               }),
             );

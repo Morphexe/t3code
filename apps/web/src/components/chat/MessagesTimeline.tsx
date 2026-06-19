@@ -1563,9 +1563,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     workEntry.itemType === "image_view" ? workEntry.imagePreviewUrl : undefined;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
-  const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
-  const imagePreviewUrl =
-    workEntry.itemType === "image_view" ? workEntry.imagePreviewUrl : undefined;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
